@@ -4,8 +4,24 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 0 — governance only. There is no application code yet.
-> See [docs/stage-plan.md](docs/stage-plan.md).
+> **Status:** Stage 1 — development scaffold (health endpoint and static page
+> only; no document processing yet). See [docs/stage-plan.md](docs/stage-plan.md).
+
+## Development (macOS)
+
+Requirements: [uv](https://docs.astral.sh/uv/) ≥ 0.10.6 (it provides Python 3.12),
+Node.js ≥ 24 with npm, and GNU Make.
+
+```bash
+uv python install 3.12   # one-time
+make install             # locked backend + frontend dependencies
+make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
+make check               # lint + type-check + tests (quality gate)
+```
+
+Open <http://127.0.0.1:5173>. Both servers bind to `127.0.0.1` only; the backend
+host cannot be changed. Set `CV_MASKING_PORT` to change the backend port (the Vite
+proxy expects 8765).
 
 ## What it does (target)
 

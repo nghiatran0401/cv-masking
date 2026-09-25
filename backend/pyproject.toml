@@ -1,0 +1,69 @@
+[project]
+name = "cv-masking"
+version = "0.1.0"
+description = "Localhost-only CV PII masking proof of concept"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn>=0.53.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.6,<0.11"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.10.6"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "A",   # builtin shadowing
+    "B",   # bugbear
+    "BLE", # blind except
+    "C4",  # comprehensions
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # naming
+    "PT",  # pytest style
+    "PTH", # pathlib
+    "RET", # return
+    "RUF", # ruff-specific
+    "S",   # bandit security
+    "SIM", # simplify
+    "UP",  # pyupgrade
+    "W",   # pycodestyle warnings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra", "--disable-socket", "--allow-unix-socket"]
+xfail_strict = true
+filterwarnings = [
+    "error",
+    # pytest-socket emits this warning immediately before raising SocketBlockedError.
+    "ignore:A test tried to use socket:UserWarning",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "pytest-socket>=0.8.1",
+    "ruff>=0.16.9",
+]

@@ -11,7 +11,7 @@ then handoff, then **git commit** (D-18).
 | # | Name | Status |
 |---|---|---|
 | 0 | Governance and threat model | Complete (committed) |
-| 1 | Repository and quality gates | Not started |
+| 1 | Repository and quality gates | Complete (committed) |
 | 2 | Domain model and state machine | Not started |
 | 3 | Local storage and cleanup | Not started |
 | 4 | SQLite metadata | Not started |
