@@ -30,9 +30,12 @@ environment local.
 
 - **Never** open, paste, attach, drag in, screenshot, or describe a real CV (or any part
   of it) in Cursor or any AI tool. This includes filenames and "just one line" excerpts.
-- **Never** place real CVs inside the repository directory, even temporarily.
-- Keep real CVs only on the HR laptop's own folders; the runtime root is outside the repo
-  (see [docs/data-retention.md](docs/data-retention.md) §3). Do not open that root in Cursor.
+- **Never** place real CVs anywhere in the repository yourself, even temporarily. The only
+  place real CVs may exist in the checkout is `data/`, written by the app itself (D-22).
+- **Never** open, search, list, or attach anything under `data/` in Cursor, and never ask an
+  agent to. It is in `.cursorignore`, but that is best-effort: a terminal command can still
+  read it (see [docs/data-retention.md](docs/data-retention.md) §3).
+- Exclude `data/` from Time Machine once: `tmutil addexclusion <project>/data`.
 - Enable Cursor **Privacy Mode**. It limits retention by providers but does not stop data
   from being transmitted; it is not a substitute for the rule above.
 - `.cursorignore` blocks indexing and agent reads of document, data, and log paths. It is a

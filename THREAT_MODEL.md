@@ -10,7 +10,7 @@ A single-user web app running on the HR user's bank-managed macOS laptop
 (Windows is a future stage and will need this model revisited). The browser UI talks to a FastAPI server on `127.0.0.1`. A local worker
 pool validates, detects, redacts, and independently verifies each CV (PDF or
 DOCX; each is redacted and verified in its own format). Files
-live in a per-user application root; job metadata lives in SQLite. No component
+live in the project's `data/` folder (D-22); job metadata lives in SQLite. No component
 makes network calls beyond loopback.
 
 ## 2. Assets
@@ -105,7 +105,7 @@ flowchart LR
 | TB-2 → TB-3 | API → parser of untrusted PDFs | Separate worker processes; page/size/decompression limits; timeouts; parser exceptions mapped to safe codes. |
 | TB-3 → TB-4 | Worker → disk | Random-UUID paths; containment; atomic writes; owner-only perms; cleanup in `finally`. |
 | TB-2 → TB-1 | API → browser | Only COMPLETED outputs downloadable; status contains codes and counts only; `no-store` caching. |
-| TB-D | Developer ↔ Cursor | Synthetic data only; `.cursorignore`; runtime root is outside the repo; human rule in SECURITY.md. |
+| TB-D | Developer ↔ Cursor | Synthetic data only; `data/` in `.cursorignore` and `.gitignore` and refused by the file guard; agents never read `data/`; human rule in SECURITY.md. Runtime files share the workspace (D-22, accepted risk). |
 
 ## 5. Threats (STRIDE) and mitigations
 
@@ -124,7 +124,7 @@ flowchart LR
 | T-10 | Tampering | Input overwritten or corrupted. | Inputs read-only after write; outputs are new files; hash check before/after. | 3, 10 |
 | T-11 | Elevation / DoS | Malicious PDF exploits parser, decompression bomb, huge page count, infinite loop. | Worker isolation; limits; timeouts; pinned parser version; fuzz-style malformed fixtures. | 6, 12, 14 |
 | T-12 | Tampering | Path traversal or symlink escape via IDs or archive entries. | Server-generated UUIDs only; containment check; symlink refusal; ZIP built from server paths. | 3, 13, 14 |
-| T-13 | Info disclosure | Temp/work files left behind after crash. | Atomic writes; `finally` cleanup; startup + periodic sweeper; retention caps. | 3, 12 |
+| T-13 | Info disclosure | Temp/work files left behind after crash. | Atomic writes; `finally` cleanup; startup + periodic sweeper (1 h for leftovers). | 3, 12 |
 | T-14 | Info disclosure | ZIP includes inputs or work files. | ZIP built only from COMPLETED output paths; test asserts contents. | 13 |
 | T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote URLs; CSP `default-src 'self'`; build scan for URLs. | 1, 13, 15 |
 | T-16 | Tampering | Supply-chain compromise of a dependency. | Minimal deps; lockfiles with hashes; justification per dep; no install scripts where avoidable. | 1+ |
@@ -153,3 +153,9 @@ flowchart LR
 9. The DOCX verifier checks structure and content but cannot confirm how Microsoft Word
    will render the output, because Word is not available to the app and must not be automated.
 10. Cursor/AI assistants are remote services; the only protection is never giving them real data.
+11. Runtime CVs live in `<project>/data/`, inside the Cursor workspace (D-22). `.cursorignore`
+    is best-effort; a broad agent search or terminal command could read them.
+12. Time Machine backs up `data/` unless it is excluded by hand, so deleted CVs may survive
+    on the backup disk (D-22).
+13. Stored inputs and outputs are never deleted automatically (D-23); they stay on the
+    laptop until HR deletes them.

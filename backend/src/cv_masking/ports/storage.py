@@ -102,7 +102,6 @@ class WorkArea(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SweepReport:
-    expired: int = 0
     temporary: int = 0
     work: int = 0
     unexpected: int = 0
@@ -110,7 +109,7 @@ class SweepReport:
 
     @property
     def removed(self) -> int:
-        return self.expired + self.temporary + self.work + self.unexpected
+        return self.temporary + self.work + self.unexpected
 
 
 class StorageSweeper(Protocol):

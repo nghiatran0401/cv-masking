@@ -131,6 +131,26 @@ def test_file_without_extension_is_checked_by_content(repo: Path) -> None:
     assert _guard(repo).returncode == 1
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "data/inputs/0b7e2f4c-1d2a-4c3b-9e8f-7a6b5c4d3e2f",
+        "data/notes.md",
+        "data/tests/fixtures/synthetic/synthetic-cv.pdf",
+    ],
+)
+def test_anything_in_the_runtime_data_folder_is_refused(repo: Path, path: str) -> None:
+    _stage(repo, path, b"synthetic plain text\n")
+    result = _guard(repo)
+    assert result.returncode == 1
+    assert "1 inside the app's runtime data/ folder" in result.stderr
+
+
+def test_data_folder_rule_is_anchored_at_the_repository_root(repo: Path) -> None:
+    _stage(repo, "backend/src/cv_masking/data/schema.py", b"SCHEMA = 1\n")
+    assert _guard(repo).returncode == 0
+
+
 def test_large_files_are_refused(repo: Path) -> None:
     _stage(repo, "src/big.txt", b"a" * (MAX_BYTES + 1))
     _stage(repo, "src/limit.txt", b"a" * MAX_BYTES)

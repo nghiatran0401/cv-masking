@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from cv_masking.adapters.local_storage import (
-    CacheRoot,
     LocalInputStore,
     LocalOutputStore,
     LocalStorageSweeper,
     LocalWorkArea,
+    StorageRoot,
 )
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.ports.storage import ObjectSink
@@ -28,7 +28,6 @@ ALLOWED_WORDS = {
     "storage",
     "sweep",
     "removed",
-    "expired",
     "temporary",
     "unexpected",
     "failed",
@@ -52,7 +51,7 @@ def test_log_lines_contain_only_ids_kinds_codes_and_counts(
     content = b"%PDF-1.7\n% synthetic Nguyen Van Mau 0900000000\n"
     with caplog.at_level(logging.DEBUG, logger="cv_masking.storage"):
         (tmp_path / "cache").mkdir(mode=0o755)
-        root = CacheRoot.prepare(tmp_path / "cache")
+        root = StorageRoot.prepare(tmp_path / "cache")
         inputs, outputs = LocalInputStore(root), LocalOutputStore(root)
         stored = inputs.save_stream(DocumentFormat.PDF, [content], max_bytes=1000)
 

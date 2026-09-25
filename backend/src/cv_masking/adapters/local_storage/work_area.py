@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from cv_masking.adapters.local_storage.root import DIR_MODE, CacheRoot, StoreKind
+from cv_masking.adapters.local_storage.root import DIR_MODE, StorageRoot, StoreKind
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.ports.storage import StorageError
 
@@ -18,7 +18,7 @@ class LocalWorkArea:
 
     __slots__ = ("_root",)
 
-    def __init__(self, root: CacheRoot) -> None:
+    def __init__(self, root: StorageRoot) -> None:
         self._root = root
 
     @contextmanager

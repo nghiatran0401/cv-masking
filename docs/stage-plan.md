@@ -78,6 +78,11 @@ Acceptance: Inputs cannot escape cache root; interrupted writes do not appear co
 
 Stage 0 notes: macOS POSIX permissions only (D-08). Retention windows in [data-retention.md](data-retention.md) §4. Stores handle both `.pdf` and `.docx` objects; the extension comes from the validated format, never from the upload name.
 
+Stage 3 follow-up (tech lead): the root is the project's ignored `data/` folder instead of a
+cache root outside the repository (D-22), and stored inputs and outputs have no age-based
+deletion (D-23). "Orphan cleanup by age" applies to temp files, work directories, and
+unexpected entries only.
+
 ## Stage 4 — SQLite metadata
 Goal: Persist only safe job state.
 

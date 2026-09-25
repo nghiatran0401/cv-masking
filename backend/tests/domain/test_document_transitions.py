@@ -8,7 +8,6 @@ from domain_builders import (
     DIGEST,
     HIDDEN_CONTENT_REASON,
     SIZE_BYTES,
-    after_retention,
     job_in_state,
     later,
     new_object_ref,
@@ -46,7 +45,6 @@ COMMANDS: dict[str, Command] = {
     ),
     "approve_review": lambda j: j.approve_review(later(j)),
     "deny_review": lambda j: j.deny_review(later(j)),
-    "expire": lambda j: j.expire(after_retention(j) if j.uploaded_at else later(j)),
     "start_processing": lambda j: j.start_processing(MaskingPolicy(), later(j)),
     "output_written": lambda j: j.output_written(new_object_ref(), COUNTS, (), later(j)),
     "record_verification": lambda j: j.record_verification(verification_for(j), later(j)),
@@ -71,7 +69,6 @@ ALLOWED: dict[tuple[DocumentState, str], DocumentState] = {
     (S.VERIFYING, "fail"): S.FAILED,
     (S.REVIEW_REQUIRED, "approve_review"): S.QUEUED,
     (S.REVIEW_REQUIRED, "deny_review"): S.REJECTED,
-    (S.REVIEW_REQUIRED, "expire"): S.FAILED,
     **{(state, "cancel"): S.CANCELLED for state in CANCELLABLE_STATES},
 }
 

@@ -16,7 +16,7 @@ Read before every stage; they override assumptions:
 
 ## Developer-environment rules (Cursor / AI)
 - Everything the agent reads or is given is sent off-machine for inference. Treat the chat as a network boundary.
-- Never read files outside the repository that may hold runtime data (the application root in docs/data-retention.md §3, Downloads, Desktop, Documents, mail attachments).
+- Never read, list, search, or open the runtime `data/` folder in the repository root (docs/data-retention.md §3), or files outside the repository that may hold runtime data (Downloads, Desktop, Documents, mail attachments). Scope searches and shell commands so they cannot descend into `data/`.
 - Never read, open, or request a file that is not synthetic. If a file of unknown origin appears (PDF, DOCX, image, CSV, SQLite, log), stop and ask; do not open it.
 - If the user pastes what looks like real candidate data, do not process or repeat it; ask them to replace it with a synthetic reproduction.
 - Synthetic values follow docs/masking-policy.md §3 and SECURITY.md §3.
@@ -38,7 +38,7 @@ Read before every stage; they override assumptions:
 - Do not work beyond the requested stage.
 
 ## Architecture
-- Localhost web app on macOS; per-user application root outside the repository. Do not add Windows-specific code before the Windows stage.
+- Localhost web app on macOS; runtime files in the project's git- and Cursor-ignored `data/` folder (D-22). Do not add Windows-specific code before the Windows stage.
 - React/Vite/TypeScript frontend.
 - Python 3.12/FastAPI backend.
 - Core processing independent from FastAPI, SQLite, and local filesystem adapters.

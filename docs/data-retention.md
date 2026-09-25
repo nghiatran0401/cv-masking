@@ -1,7 +1,8 @@
 # Privacy assumptions, local retention, and cleanup
 
 Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implemented in
-Stage 3. Metadata follows in Stage 4, recovery in Stage 12, shutdown in Stage 15.
+Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D-24).
+Metadata follows in Stage 4, recovery in Stage 12, shutdown in Stage 15.
 
 ## 1. Privacy assumptions
 
@@ -38,18 +39,18 @@ Protected by design:
 
 ## 3. Storage locations
 
-All runtime data lives **outside the repository** under a per-user application root:
+All runtime files live in the project's `data/` folder (decision D-22):
 
-| Platform | Application root |
+| Platform | Location |
 |---|---|
-| macOS | `~/Library/Application Support/CVMasking/` (metadata) and `~/Library/Caches/CVMasking/` (files) |
-| Windows | Future stage (D-08); expected `%LOCALAPPDATA%\CVMasking\` |
+| macOS | `<project>/data/` (files); SQLite metadata location is decided in Stage 4 (proposed: the same folder) |
+| Windows | Future stage (D-08) |
 
 File layout (Stage 3):
 
 ```text
-~/Library/Caches/CVMasking/          0700, owned by the HR user
-  .cv-masking-cache                  0600 marker: this directory belongs to the app
+<project>/data/                      0700, owned by the HR user
+  .cv-masking-data                   0600 marker: this directory belongs to the app
   .metadata_never_index              0600 marker: ask Spotlight not to index
   inputs/<uuid4>.pdf|.docx           0400 uploaded copies
   outputs/<uuid4>.pdf|.docx          0400 masked outputs
@@ -62,11 +63,15 @@ Rules:
   taken from the validated format. Original filenames are never
   used in any path, database row, log line, or report. The input and output of a
   document use different random identifiers.
-- **Dedicated root.** The root must be an absolute path outside any git checkout. An
-  existing non-empty directory without the `.cv-masking-cache` marker is refused (the app
-  never adopts, sweeps, or deletes a directory it did not create). A root owned by another
-  user, or a symlink, is refused. A root owned by the user with looser permissions is
-  tightened to `0700` and a warning is logged.
+- **Kept out of git and Cursor.** `data/` is listed in `.gitignore` and `.cursorignore`
+  (a test fails if either entry is removed), and the file guard refuses any staged path
+  under `data/`, whatever its type. `.cursorignore` is best-effort: an agent's terminal
+  command can still read the folder. Agents must never read `data/` (AGENTS.md).
+- **Dedicated root.** The root must be an absolute path. An existing non-empty directory
+  without the `.cv-masking-data` marker is refused (the app never adopts, sweeps, or
+  deletes a directory it did not create). A root owned by another user, or a symlink, is
+  refused. A root owned by the user with looser permissions is tightened to `0700` and a
+  warning is logged.
 - **No path traversal or symlinks.** Every file operation is relative to an already-opened
   directory descriptor with `O_NOFOLLOW`. Names are generated internally and checked against
   a strict pattern. An opened object must be a regular file, owned by the user, with a
@@ -76,51 +81,55 @@ Rules:
   read-only, then hard-linked to its final name (a link never replaces an existing file),
   and the directory is fsynced. A partial file is never visible under a final name, and
   no input or output is ever overwritten.
-- **Time Machine.** `~/Library/Caches` is in Time Machine's standard exclusions. This was
-  confirmed on the development Mac (macOS 26) with `tmutil isexcluded ~/Library/Caches`
-  → `[Excluded]`. The app does not set its own exclusion, because that would require a
-  subprocess (`tmutil`) or native calls. Bank backup agents may ignore this (A-3).
-- **Spotlight.** The app writes a `.metadata_never_index` marker in the root. Apple
-  documents this marker for volumes; its effect on a folder is best-effort and must be
-  checked on the bank image. Stored files have no filename metadata beyond a UUID.
+- **Time Machine backs up `data/` by default.** Unlike `~/Library/Caches`, a project
+  folder is included in backups, so deleted CVs could survive on the backup disk. Exclude
+  it once by hand (the app runs no subprocess): `tmutil addexclusion <project>/data`.
+  Bank backup agents may ignore this (A-3).
+- **Spotlight.** The app writes a `.metadata_never_index` marker in the root. Its effect on
+  a folder is best-effort. Stored files have no filename metadata beyond a UUID.
 
-Manual checks on a bank laptop (after the app has created the root):
+Checks (after the app has created the folder):
 
 ```bash
-tmutil isexcluded ~/Library/Caches/CVMasking      # expect [Excluded]
-ls -la ~/Library/Caches/CVMasking                  # expect drwx------ and both markers
-mdfind -onlyin ~/Library/Caches/CVMasking 'kMDItemFSName == "*"'   # expect no results
+ls -ld data data/inputs            # expect drwx------ <hr-user>
+ls -l data/inputs data/outputs     # expect -r-------- <hr-user> for each file
+tmutil isexcluded data             # expect [Excluded] after tmutil addexclusion
+git check-ignore data/x            # expect: data/x (ignored)
 ```
+
+To prove another account cannot read it: `sudo -u <other-user> ls <project>/data` should
+print "Permission denied". Administrators, root, and bank security agents are not stopped
+by file permissions (A-2, A-3).
 
 ## 4. Retention schedule
 
 | Data | Where | Deleted when (whichever first) |
 |---|---|---|
-| Uploaded input copy | Caches/CVMasking/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); HR deletes the document/batch; **24 h** after upload (a document still in `REVIEW_REQUIRED` at 24 h becomes `FAILED`/expired and its input is deleted). |
-| Work/intermediate files | Caches/CVMasking/work | End of each processing attempt (success or failure). |
-| Masked output | Caches/CVMasking/outputs | HR clears it; **24 h** after the document completed. |
-| ZIP export | Caches/CVMasking/exports (later stage) | Streamed download finishes, or 1 h after creation. |
+| Uploaded input copy | data/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); or HR deletes the document/batch. A document in `REVIEW_REQUIRED` keeps its input until HR decides. |
+| Work/intermediate files | data/work | End of each processing attempt (success or failure). |
+| Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
+| ZIP export | data/exports (later stage) | Streamed download finishes, or 1 h after creation. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | Application Support / LOCALAPPDATA | Batch is purged (all its documents purged). No long-term audit trail (D-11). |
 | Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |
 | Original filenames (display only) | Browser tab memory | Tab closed or reloaded. |
 | Extracted text, detected values, decompressed DOCX parts | Worker process memory | End of the job; never written to disk by the app. |
 
-The 24 h windows are hard maximums; they are not extended by activity.
+There is no age-based deletion of inputs or outputs (D-23). HR is responsible for deleting
+them; to erase everything by hand, quit the app and delete `<project>/data/`.
 
 ## 5. Cleanup triggers
 
 1. **Per job:** after every attempt, the worker deletes its work files in a `finally` path
    that cannot be skipped by exceptions; cleanup failure is logged by code and retried by the sweeper.
 2. **Terminal state:** input copy deleted immediately.
-3. **Periodic sweeper:** every 10 minutes while running, purges anything past §4 windows and
-   any orphan file with no matching metadata row. The file-age part exists since Stage 3
-   (the schedule and metadata reconciliation come in Stages 4 and 12). It looks only inside
-   `inputs/`, `outputs/` and `work/`, never follows symlinks, and removes by file age:
+3. **Periodic sweeper:** every 10 minutes while running, removes crash leftovers. It exists
+   since Stage 3 (the schedule comes in Stage 12). It looks only inside `inputs/`,
+   `outputs/` and `work/`, never follows symlinks, and removes by file age:
 
    | Entry | Removed after |
    |---|---|
-   | `inputs/` or `outputs/` object (`<uuid4>.pdf/.docx`) | 24 h, even with no metadata |
+   | `inputs/` or `outputs/` object (`<uuid4>.pdf/.docx`) | Never (HR deletes, D-23) |
    | Temp file (`.<hex>.part`) | 1 h |
    | Work directory (`work/<uuid4>`) | 1 h |
    | Anything else (unexpected names, symlinks, stray directories) | 1 h |
@@ -131,7 +140,7 @@ The 24 h windows are hard maximums; they are not extended by activity.
    recovered per Stage 12 (bounded retry) or failed with `JOB_INTERRUPTED`.
 5. **HR "Clear all":** deletes every batch, file, and metadata row immediately.
 6. **Graceful shutdown:** deletes work files; in-flight jobs return to `QUEUED` for recovery.
-   Inputs and outputs remain until their §4 window (open question Q-07: should quit erase everything?).
+   Inputs, outputs, and metadata are kept (D-24).
 7. **Uninstall (Stage 15):** documented steps remove the application root entirely.
 
 ## 6. Hash handling

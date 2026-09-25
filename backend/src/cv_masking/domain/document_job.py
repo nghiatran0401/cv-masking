@@ -30,7 +30,7 @@ from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.findings import FindingCounts
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef, Sha256Digest
-from cv_masking.domain.limits import HARD_MAX_FILE_BYTES, MAX_PROCESSING_ATTEMPTS, RETENTION_WINDOW
+from cv_masking.domain.limits import HARD_MAX_FILE_BYTES, MAX_PROCESSING_ATTEMPTS
 from cv_masking.domain.policy import MaskingPolicy
 from cv_masking.domain.verification import VerificationOutcome, VerificationResult
 
@@ -229,18 +229,6 @@ class DocumentJob:
     def deny_review(self, at: datetime) -> "DocumentJob":
         self._require_state("deny_review", DocumentState.REVIEW_REQUIRED)
         return self._advance(at, state=DocumentState.REJECTED, review_reasons=frozenset())
-
-    def expire(self, at: datetime) -> "DocumentJob":
-        self._require_state("expire", DocumentState.REVIEW_REQUIRED)
-        require_utc(at, "at")
-        if self.uploaded_at is None or at < self.uploaded_at + RETENTION_WINDOW:
-            raise InvalidTransitionError("expire", self.state, "retention window has not elapsed")
-        return self._advance(
-            at,
-            state=DocumentState.FAILED,
-            review_reasons=frozenset(),
-            error_code=ErrorCode.JOB_EXPIRED,
-        )
 
     # ------------------------------------------------------------------ processing
 

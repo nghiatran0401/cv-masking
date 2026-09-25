@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from cv_masking.adapters.local_storage import CacheRoot, LocalWorkArea
+from cv_masking.adapters.local_storage import LocalWorkArea, StorageRoot
 from cv_masking.adapters.local_storage.root import WORK_NAME_RE
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.ports.storage import StorageError
 
 
-def _work_entries(root: CacheRoot) -> list[str]:
+def _work_entries(root: StorageRoot) -> list[str]:
     return [path.name for path in (root.path / "work").iterdir()]
 
 
@@ -29,7 +29,7 @@ def _swap_for_symlink(work_area: LocalWorkArea, target: Path, *, then_fail: bool
 
 
 def test_attempt_gives_a_fresh_private_directory_and_removes_it(
-    work_area: LocalWorkArea, root: CacheRoot
+    work_area: LocalWorkArea, root: StorageRoot
 ) -> None:
     with work_area.attempt() as directory:
         assert directory.parent == root.path / "work"
@@ -47,7 +47,7 @@ def test_attempts_are_isolated(work_area: LocalWorkArea) -> None:
 
 
 def test_directory_is_removed_when_the_attempt_fails(
-    work_area: LocalWorkArea, root: CacheRoot
+    work_area: LocalWorkArea, root: StorageRoot
 ) -> None:
     with pytest.raises(RuntimeError, match="synthetic failure"):
         _fail_inside(work_area)
@@ -92,7 +92,7 @@ def test_cleanup_failure_during_an_error_keeps_the_original_error(
 
 
 def test_attempt_fails_closed_when_work_directory_is_unsafe(
-    work_area: LocalWorkArea, root: CacheRoot
+    work_area: LocalWorkArea, root: StorageRoot
 ) -> None:
     (root.path / "work").chmod(0o755)
     with pytest.raises(StorageError), work_area.attempt():

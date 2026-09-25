@@ -44,7 +44,6 @@ stateDiagram-v2
     VERIFYING --> FAILED: record_verification FAILED, or fail
     REVIEW_REQUIRED --> COMPLETED: approve_review (findings only, verification PASSED)
     REVIEW_REQUIRED --> REJECTED: deny_review
-    REVIEW_REQUIRED --> FAILED: expire (24 h after upload, JOB_EXPIRED)
     note right of CREATED: cancel is allowed from every non-terminal state except REVIEW_REQUIRED
     COMPLETED --> [*]
     FAILED --> [*]
@@ -181,7 +180,6 @@ broken or mismatched output.
 | `JOB_TIMEOUT` | R | Processing exceeded the time limit. |
 | `JOB_CANCELLED` | T | Cancelled by HR. |
 | `JOB_INTERRUPTED` | R | App stopped during processing and the 3-attempt limit was reached. |
-| `JOB_EXPIRED` | T | Still in review 24 h after upload; input deleted. |
 | `STORAGE_WRITE_FAILED` | R | Local write failed (disk full, permissions). |
 | `STORAGE_PATH_REJECTED` | T | Path containment check failed. |
 | `STORAGE_INTEGRITY_FAILED` | T | Stored file hash does not match. |

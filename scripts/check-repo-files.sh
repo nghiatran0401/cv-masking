@@ -72,11 +72,20 @@ blocked_signature() {
     esac
 }
 
+# The app's runtime storage root (docs/data-retention.md §3); nothing in it is ever committed.
+in_runtime_root() {
+    case "$1" in
+    data/*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
 too_large() {
     [ "$(git cat-file -s ":$1")" -gt "$MAX_BYTES" ]
 }
 
 checked=0
+by_location=0
 by_extension=0
 by_content=0
 by_size=0
@@ -84,6 +93,10 @@ while IFS= read -r -d '' path; do
     # Deleted-in-worktree files are still in the index; symlinks and submodules have no blob to read.
     [ "$(git cat-file -t ":$path" 2>/dev/null || true)" = "blob" ] || continue
     checked=$((checked + 1))
+    if in_runtime_root "$path"; then
+        by_location=$((by_location + 1))
+        continue
+    fi
     if too_large "$path"; then
         by_size=$((by_size + 1))
         continue
@@ -96,10 +109,11 @@ while IFS= read -r -d '' path; do
     fi
 done < <("${list_cmd[@]}")
 
-refused=$((by_extension + by_content + by_size))
+refused=$((by_location + by_extension + by_content + by_size))
 if [ "$refused" -gt 0 ]; then
     {
         echo "cv-masking file guard: refused $refused of $checked file(s)."
+        [ "$by_location" -eq 0 ] || echo "  $by_location inside the app's runtime data/ folder"
         [ "$by_extension" -eq 0 ] || echo "  $by_extension with a document, image, data, or log extension"
         [ "$by_content" -eq 0 ] || echo "  $by_content whose content is a document, image, archive, or database"
         [ "$by_size" -eq 0 ] || echo "  $by_size larger than $MAX_BYTES bytes"

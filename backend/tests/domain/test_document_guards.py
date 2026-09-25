@@ -29,7 +29,7 @@ from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.document_job import DocumentJob, DocumentState
 from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.formats import DocumentFormat
-from cv_masking.domain.limits import MAX_PROCESSING_ATTEMPTS, RETENTION_WINDOW
+from cv_masking.domain.limits import MAX_PROCESSING_ATTEMPTS
 from cv_masking.domain.policy import MaskingPolicy
 from cv_masking.domain.verification import VerificationOutcome
 
@@ -235,24 +235,6 @@ def test_deny_rejects_any_review_and_clears_reasons(build: Callable[[], Document
     assert result.state is S.REJECTED
     assert result.review_reasons == frozenset()
     assert result.error_code is None
-
-
-def test_expire_requires_the_full_retention_window() -> None:
-    job = validation_review()
-    assert job.uploaded_at is not None
-    just_before = job.uploaded_at + RETENTION_WINDOW - timedelta(microseconds=1)
-    with pytest.raises(InvalidTransitionError):
-        job.expire(just_before)
-    result = job.expire(job.uploaded_at + RETENTION_WINDOW)
-    assert (result.state, result.error_code) == (S.FAILED, E.JOB_EXPIRED)
-    assert result.review_reasons == frozenset()
-
-
-def test_expire_applies_to_post_processing_reviews() -> None:
-    job = findings_review()
-    assert job.uploaded_at is not None
-    result = job.expire(job.uploaded_at + RETENTION_WINDOW + timedelta(hours=1))
-    assert result.error_code is E.JOB_EXPIRED
 
 
 # ------------------------------------------------------------------ processing

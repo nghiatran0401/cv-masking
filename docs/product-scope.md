@@ -72,7 +72,7 @@ laptop and produces permanently redacted copies.
 | D-03 | Vietnamese is the primary language; English and bilingual CVs are supported. | Tech lead, Stage 0 |
 | D-04 | No image CVs in this phase. | Tech lead, Stage 0 |
 | D-05 | Hidden content → alert HR with kind/count/page of content found; HR approves or denies the CV. On approve, the flagged content is removed from the output (never preserved). | Tech lead, Stage 0 (removal-on-approve is an agent assumption, see Q-02) |
-| D-06 | Retention: outputs kept until HR clears them or 24 h, whichever is first; inputs deleted as soon as the job reaches a terminal state. | Tech lead, Stage 0 |
+| D-06 | ~~Retention: outputs kept until HR clears them or 24 h, whichever is first;~~ inputs deleted as soon as the job reaches a terminal state. The 24 h part is superseded by D-23. | Tech lead, Stage 0 |
 | D-07 | Output name `redacted-<uuid>.pdf`; for DOCX input, `redacted-<uuid>.docx`. | Tech lead, Stage 0 (revised) |
 | D-08 | PoC platform is macOS only. Windows gets its own stage later; no current stage carries Windows requirements. | Tech lead, Stage 0 (revised) |
 | D-09 | Limits: 20 MB per file, 30 pages per file, 100 files per batch (configurable, cannot be raised above hard caps without code change). | Tech lead, Stage 0 |
@@ -85,9 +85,12 @@ laptop and produces permanently redacted copies.
 | D-16 | DOCX work is added as Stages 6b (validate + extract), 10b (redact), and 11b (verify), placed right after their PDF counterparts. | Tech lead, Stage 0 |
 | D-17 | The Stage 2 domain model is format-neutral from the start: a `DocumentFormat` (PDF, DOCX) and a finding location that is either PDF page + boxes or DOCX part + character range. | Tech lead, Stage 0 |
 | D-18 | Every stage ends with a git commit after all checks pass. | Tech lead, Stage 0 |
-| D-19 | A document still in review 24 h after upload fails with the terminal code `JOB_EXPIRED`. | Tech lead, Stage 2 |
+| D-19 | ~~A document still in review 24 h after upload fails with the terminal code `JOB_EXPIRED`.~~ Superseded by D-23: documents stay in review until HR decides; `JOB_EXPIRED` is removed. | Tech lead, Stage 2 |
 | D-20 | A failed verification shows HR its most serious code: residual finding, residual detection, residual metadata, invalid output, page-count mismatch, structure mismatch. | Tech lead, Stage 2 |
 | D-21 | A pre-commit and `make check` file guard refuses document, image, data, and log files (by name and content) and files over 1 MiB, except synthetic fixtures. npm install scripts are disabled. | Tech lead, Stage 2 follow-up |
+| D-22 | Runtime files live in `<project>/data/`, inside the checkout, ignored by `.gitignore` and `.cursorignore` and refused by the file guard. The tech lead accepted the residual risks: Cursor/AI tooling working in the same folder, and Time Machine backing it up unless excluded by hand. Supersedes the "outside the repository" rule. | Tech lead, Stage 3 follow-up |
+| D-23 | No automatic deletion of stored inputs and outputs by age; HR deletes them manually. The app still deletes work files after every attempt, and the sweeper removes crash leftovers (temp files, work directories, unexpected entries) after 1 h. | Tech lead, Stage 3 follow-up |
+| D-24 | Quitting the app does not erase inputs, outputs, or metadata (answers Q-07). | Tech lead, Stage 3 follow-up |
 
 ## 6. Known gaps between approved scope and the stage plan
 

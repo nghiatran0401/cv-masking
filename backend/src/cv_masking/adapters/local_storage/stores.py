@@ -11,7 +11,7 @@ from uuid import uuid4
 from cv_masking.adapters.local_storage.root import (
     FILE_MODE,
     OBJECT_MODE,
-    CacheRoot,
+    StorageRoot,
     StoreKind,
     object_name,
     require_owned_file,
@@ -74,7 +74,7 @@ class _LocalObjectStore:
 
     __slots__ = ("_root",)
 
-    def __init__(self, root: CacheRoot) -> None:
+    def __init__(self, root: StorageRoot) -> None:
         self._root = root
 
     def save(

@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from cv_masking.adapters.local_storage import CacheRoot, LocalInputStore, LocalOutputStore
+from cv_masking.adapters.local_storage import LocalInputStore, LocalOutputStore, StorageRoot
 from cv_masking.adapters.local_storage import stores as stores_module
 from cv_masking.adapters.local_storage.root import OBJECT_NAME_RE
 from cv_masking.domain.codes import ErrorCode
@@ -37,7 +37,7 @@ def kind(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture
-def store(root: CacheRoot, kind: str) -> Store:
+def store(root: StorageRoot, kind: str) -> Store:
     return STORES[kind](root)
 
 
@@ -49,7 +49,7 @@ def _writer(*chunks: bytes) -> Callable[[ObjectSink], None]:
     return produce
 
 
-def _entries(root: CacheRoot, kind: str) -> list[str]:
+def _entries(root: StorageRoot, kind: str) -> list[str]:
     return sorted(path.name for path in (root.path / kind).iterdir())
 
 
@@ -61,7 +61,7 @@ def _save(store: Store, data: bytes = DATA, fmt: DocumentFormat = PDF) -> Stored
     return store.save(fmt, _writer(data), max_bytes=HARD_MAX_FILE_BYTES)
 
 
-def _planted(root: CacheRoot, kind: str, fmt: DocumentFormat = PDF) -> tuple[ObjectRef, Path]:
+def _planted(root: StorageRoot, kind: str, fmt: DocumentFormat = PDF) -> tuple[ObjectRef, Path]:
     ref = ObjectRef(uuid4())
     suffix = ".pdf" if fmt is PDF else ".docx"
     return ref, root.path / kind / f"{ref.value}{suffix}"
@@ -72,7 +72,7 @@ def _planted(root: CacheRoot, kind: str, fmt: DocumentFormat = PDF) -> tuple[Obj
 
 @pytest.mark.parametrize("fmt", [PDF, DOCX])
 def test_save_round_trips_with_hash_and_size(
-    store: Store, root: CacheRoot, kind: str, fmt: DocumentFormat
+    store: Store, root: StorageRoot, kind: str, fmt: DocumentFormat
 ) -> None:
     stored = _save(store, DATA, fmt)
     assert stored.document_format is fmt
@@ -100,7 +100,7 @@ def test_input_store_saves_a_chunk_stream(input_store: LocalInputStore) -> None:
     input_store.verify(stored)
 
 
-def test_size_limit_is_exact(store: Store, root: CacheRoot, kind: str) -> None:
+def test_size_limit_is_exact(store: Store, root: StorageRoot, kind: str) -> None:
     assert store.save(PDF, _writer(DATA), max_bytes=len(DATA)).size_bytes == len(DATA)
     with pytest.raises(StorageError) as caught:
         store.save(PDF, _writer(DATA, b"x"), max_bytes=len(DATA))
@@ -114,14 +114,14 @@ def test_invalid_size_limits_are_refused(store: Store, max_bytes: object) -> Non
         store.save(PDF, _writer(DATA), max_bytes=max_bytes)  # type: ignore[arg-type]
 
 
-def test_empty_object_is_refused(store: Store, root: CacheRoot, kind: str) -> None:
+def test_empty_object_is_refused(store: Store, root: StorageRoot, kind: str) -> None:
     with pytest.raises(StorageError) as caught:
         store.save(PDF, _writer(), max_bytes=100)
     assert _code(caught) is ErrorCode.STORAGE_WRITE_FAILED
     assert _entries(root, kind) == []
 
 
-def test_failing_producer_leaves_nothing_behind(store: Store, root: CacheRoot, kind: str) -> None:
+def test_failing_producer_leaves_nothing_behind(store: Store, root: StorageRoot, kind: str) -> None:
     def produce(sink: ObjectSink) -> None:
         sink.write(DATA)
         raise ValueError("synthetic producer failure")
@@ -132,7 +132,7 @@ def test_failing_producer_leaves_nothing_behind(store: Store, root: CacheRoot, k
 
 
 def test_interrupted_stream_leaves_nothing_behind(
-    input_store: LocalInputStore, root: CacheRoot
+    input_store: LocalInputStore, root: StorageRoot
 ) -> None:
     def chunks() -> Iterator[bytes]:
         yield DATA
@@ -144,14 +144,14 @@ def test_interrupted_stream_leaves_nothing_behind(
     assert _entries(root, "inputs") == []
 
 
-def test_non_bytes_writes_are_refused(store: Store, root: CacheRoot, kind: str) -> None:
+def test_non_bytes_writes_are_refused(store: Store, root: StorageRoot, kind: str) -> None:
     with pytest.raises(TypeError):
         store.save(PDF, lambda sink: sink.write("text"), max_bytes=100)  # type: ignore[arg-type]
     assert _entries(root, kind) == []
 
 
 def test_disk_full_while_writing_leaves_nothing_behind(
-    store: Store, root: CacheRoot, kind: str, monkeypatch: pytest.MonkeyPatch
+    store: Store, root: StorageRoot, kind: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fail(fd: int) -> None:
         raise OSError(errno.ENOSPC, "synthetic disk full")
@@ -164,7 +164,7 @@ def test_disk_full_while_writing_leaves_nothing_behind(
 
 
 def test_failure_after_linking_removes_the_final_object(
-    store: Store, root: CacheRoot, kind: str, monkeypatch: pytest.MonkeyPatch
+    store: Store, root: StorageRoot, kind: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     real_fsync = os.fsync
     calls: list[int] = []
@@ -182,7 +182,7 @@ def test_failure_after_linking_removes_the_final_object(
 
 
 def test_save_never_overwrites_an_existing_object(
-    store: Store, root: CacheRoot, kind: str, monkeypatch: pytest.MonkeyPatch
+    store: Store, root: StorageRoot, kind: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixed = UUID("12345678-1234-4234-8234-123456789abc")
     temp = UUID("abcdefab-cdef-4abc-8def-abcdefabcdef")
@@ -207,7 +207,7 @@ def test_missing_object_fails_integrity(store: Store) -> None:
 
 
 def test_symlink_at_object_name_is_refused(
-    store: Store, root: CacheRoot, kind: str, outside: Path
+    store: Store, root: StorageRoot, kind: str, outside: Path
 ) -> None:
     ref, path = _planted(root, kind)
     path.symlink_to(outside / "keep.txt")
@@ -217,7 +217,7 @@ def test_symlink_at_object_name_is_refused(
 
 
 def test_hard_link_at_object_name_is_refused(
-    store: Store, root: CacheRoot, kind: str, outside: Path
+    store: Store, root: StorageRoot, kind: str, outside: Path
 ) -> None:
     ref, path = _planted(root, kind)
     (outside / "keep.txt").chmod(0o600)
@@ -228,7 +228,7 @@ def test_hard_link_at_object_name_is_refused(
 
 
 def test_fifo_at_object_name_is_refused_without_blocking(
-    store: Store, root: CacheRoot, kind: str
+    store: Store, root: StorageRoot, kind: str
 ) -> None:
     ref, path = _planted(root, kind)
     os.mkfifo(path, 0o600)
@@ -237,7 +237,7 @@ def test_fifo_at_object_name_is_refused_without_blocking(
     assert _code(caught) is ErrorCode.STORAGE_PATH_REJECTED
 
 
-def test_directory_at_object_name_is_refused(store: Store, root: CacheRoot, kind: str) -> None:
+def test_directory_at_object_name_is_refused(store: Store, root: StorageRoot, kind: str) -> None:
     ref, path = _planted(root, kind)
     path.mkdir(mode=0o700)
     with pytest.raises(StorageError) as caught:
@@ -248,7 +248,7 @@ def test_directory_at_object_name_is_refused(store: Store, root: CacheRoot, kind
     assert path.is_dir()
 
 
-def test_world_readable_object_is_refused(store: Store, root: CacheRoot, kind: str) -> None:
+def test_world_readable_object_is_refused(store: Store, root: StorageRoot, kind: str) -> None:
     ref, path = _planted(root, kind)
     path.write_bytes(DATA)
     path.chmod(0o644)
@@ -278,7 +278,7 @@ def test_untyped_refs_and_formats_are_refused(store: Store, ref: object, fmt: ob
 
 @pytest.mark.parametrize("fmt", ["pdf", "../x", None])
 def test_save_refuses_untyped_formats(
-    store: Store, root: CacheRoot, kind: str, fmt: object
+    store: Store, root: StorageRoot, kind: str, fmt: object
 ) -> None:
     with pytest.raises(StorageError) as caught:
         store.save(fmt, _writer(DATA), max_bytes=100)  # type: ignore[arg-type]
@@ -303,7 +303,7 @@ def test_input_and_output_stores_are_separate(
 
 
 @pytest.mark.parametrize("tamper", ["modified", "truncated", "deleted"])
-def test_verify_detects_tampering(store: Store, root: CacheRoot, kind: str, tamper: str) -> None:
+def test_verify_detects_tampering(store: Store, root: StorageRoot, kind: str, tamper: str) -> None:
     stored = _save(store)
     path = root.path / kind / f"{stored.ref.value}.pdf"
     if tamper == "deleted":
@@ -327,7 +327,7 @@ def test_verify_detects_a_wrong_record(store: Store) -> None:
 # ------------------------------------------------------------------ delete
 
 
-def test_delete_is_idempotent(store: Store, root: CacheRoot, kind: str) -> None:
+def test_delete_is_idempotent(store: Store, root: StorageRoot, kind: str) -> None:
     stored = _save(store)
     assert store.delete(stored.ref, PDF) is True
     assert store.delete(stored.ref, PDF) is False
@@ -335,7 +335,7 @@ def test_delete_is_idempotent(store: Store, root: CacheRoot, kind: str) -> None:
 
 
 def test_delete_removes_a_planted_symlink_without_following_it(
-    store: Store, root: CacheRoot, kind: str, outside: Path
+    store: Store, root: StorageRoot, kind: str, outside: Path
 ) -> None:
     ref, path = _planted(root, kind)
     path.symlink_to(outside / "keep.txt")

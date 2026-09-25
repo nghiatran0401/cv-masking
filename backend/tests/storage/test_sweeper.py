@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from cv_masking.adapters.local_storage import CacheRoot, LocalStorageSweeper
+from cv_masking.adapters.local_storage import LocalStorageSweeper, StorageRoot
 from cv_masking.adapters.local_storage.root import ROOT_MARKER, SPOTLIGHT_MARKER
 from cv_masking.domain.errors import InvariantError
 from cv_masking.ports.storage import SweepReport
@@ -33,28 +33,25 @@ def _object_name(suffix: str = ".pdf") -> str:
     return f"{uuid4()}{suffix}"
 
 
-def test_fresh_entries_are_kept(sweeper: LocalStorageSweeper, root: CacheRoot) -> None:
-    _file(root.path / "inputs", _object_name(), DAY - SECOND)
-    _file(root.path / "outputs", _object_name(".docx"), DAY - SECOND)
+def test_fresh_entries_are_kept(sweeper: LocalStorageSweeper, root: StorageRoot) -> None:
     _file(root.path / "inputs", f".{uuid4().hex}.part", HOUR - SECOND)
     _age(_mkdir(root.path / "work" / str(uuid4())), HOUR - SECOND)
     _file(root.path / "outputs", "unexpected.txt", HOUR - SECOND)
     assert sweeper.sweep(NOW) == SweepReport()
 
 
-def test_objects_expire_at_the_retention_window(
-    sweeper: LocalStorageSweeper, root: CacheRoot
+def test_stored_objects_are_never_removed_by_age(
+    sweeper: LocalStorageSweeper, root: StorageRoot
 ) -> None:
-    old_input = _file(root.path / "inputs", _object_name(), DAY)
-    old_output = _file(root.path / "outputs", _object_name(".docx"), DAY + HOUR)
-    report = sweeper.sweep(NOW)
-    assert report == SweepReport(expired=2)
-    assert not old_input.exists()
-    assert not old_output.exists()
+    old_input = _file(root.path / "inputs", _object_name(), DAY * 365)
+    old_output = _file(root.path / "outputs", _object_name(".docx"), DAY * 365)
+    assert sweeper.sweep(NOW) == SweepReport()
+    assert old_input.read_bytes() == b"synthetic"
+    assert old_output.read_bytes() == b"synthetic"
 
 
 def test_leftover_temporary_files_are_removed_after_an_hour(
-    sweeper: LocalStorageSweeper, root: CacheRoot
+    sweeper: LocalStorageSweeper, root: StorageRoot
 ) -> None:
     leftover = _file(root.path / "outputs", f".{uuid4().hex}.part", HOUR)
     assert sweeper.sweep(NOW) == SweepReport(temporary=1)
@@ -62,7 +59,7 @@ def test_leftover_temporary_files_are_removed_after_an_hour(
 
 
 def test_abandoned_work_directories_are_removed_without_following_links(
-    sweeper: LocalStorageSweeper, root: CacheRoot, outside: Path
+    sweeper: LocalStorageSweeper, root: StorageRoot, outside: Path
 ) -> None:
     work = _mkdir(root.path / "work" / str(uuid4()))
     (work / "part.bin").write_bytes(b"synthetic")
@@ -74,7 +71,7 @@ def test_abandoned_work_directories_are_removed_without_following_links(
 
 
 def test_unexpected_entries_are_removed_without_following_links(
-    sweeper: LocalStorageSweeper, root: CacheRoot, outside: Path
+    sweeper: LocalStorageSweeper, root: StorageRoot, outside: Path
 ) -> None:
     link = root.path / "inputs" / _object_name()
     link.symlink_to(outside / "keep.txt")
@@ -89,7 +86,9 @@ def test_unexpected_entries_are_removed_without_following_links(
     assert (outside / "keep.txt").read_bytes() == b"synthetic outside file\n"
 
 
-def test_root_level_markers_are_never_swept(sweeper: LocalStorageSweeper, root: CacheRoot) -> None:
+def test_root_level_markers_are_never_swept(
+    sweeper: LocalStorageSweeper, root: StorageRoot
+) -> None:
     for marker in (ROOT_MARKER, SPOTLIGHT_MARKER):
         _age(root.path / marker, DAY * 30)
     sweeper.sweep(NOW)
@@ -97,16 +96,16 @@ def test_root_level_markers_are_never_swept(sweeper: LocalStorageSweeper, root: 
     assert (root.path / SPOTLIGHT_MARKER).exists()
 
 
-def test_future_timestamps_are_kept(sweeper: LocalStorageSweeper, root: CacheRoot) -> None:
-    _file(root.path / "inputs", _object_name(), -HOUR)
+def test_future_timestamps_are_kept(sweeper: LocalStorageSweeper, root: StorageRoot) -> None:
+    _file(root.path / "inputs", f".{uuid4().hex}.part", -HOUR)
     assert sweeper.sweep(NOW) == SweepReport()
 
 
 def test_removal_failures_are_counted_and_sweeping_continues(
-    sweeper: LocalStorageSweeper, root: CacheRoot, monkeypatch: pytest.MonkeyPatch
+    sweeper: LocalStorageSweeper, root: StorageRoot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _file(root.path / "inputs", _object_name(), DAY)
-    _file(root.path / "outputs", _object_name(), DAY)
+    _file(root.path / "inputs", f".{uuid4().hex}.part", HOUR)
+    _file(root.path / "outputs", f".{uuid4().hex}.part", HOUR)
     real_unlink = os.unlink
     calls: list[str] = []
 
@@ -118,7 +117,7 @@ def test_removal_failures_are_counted_and_sweeping_continues(
 
     monkeypatch.setattr("cv_masking.adapters.local_storage.sweeper.os.unlink", unlink_once_failing)
     report = sweeper.sweep(NOW)
-    assert report == SweepReport(expired=1, failed=1)
+    assert report == SweepReport(temporary=1, failed=1)
     assert report.removed == 1
 
 

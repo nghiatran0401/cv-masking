@@ -94,7 +94,7 @@ def test_code_groups_are_read_only() -> None:
 
 def test_is_retryable() -> None:
     assert is_retryable(ErrorCode.JOB_INTERRUPTED)
-    assert not is_retryable(ErrorCode.JOB_EXPIRED)
+    assert not is_retryable(ErrorCode.JOB_CANCELLED)
 
 
 def test_every_reason_has_a_kind() -> None:

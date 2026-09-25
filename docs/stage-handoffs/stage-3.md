@@ -189,3 +189,89 @@ feat(storage): local file storage, work areas, and sweeper (Stage 3)
 - DocumentJob.input_ref with output_ref != input_ref invariant
 - Retention docs: layout, Time Machine/Spotlight findings, manual checks
 ```
+
+---
+
+## Follow-up: in-project storage and manual deletion
+
+Everything above describes the Stage 3 commit (`0a3cc11`). After review, the tech lead
+changed three decisions and accepted the stated risks:
+
+- **D-22:** runtime files live in `<project>/data/`.
+- **D-23:** stored inputs and outputs are never deleted by age.
+- **D-24:** quitting does not erase anything (answers Q-07).
+
+The Spotlight manual check was dropped as unnecessary.
+
+### Changes
+
+- **Location.**
+  - `default_storage_root()` returns `<project>/data`.
+  - `CacheRoot` is renamed to `StorageRoot`, and the marker is renamed to `.cv-masking-data`.
+  - The rule refusing a root inside a git checkout is removed. The other root rules are unchanged: absolute path, owner, no symlink, marker or empty directory, and `0700`.
+- **Kept out of git and Cursor.** `data/` was already in `.gitignore` and `.cursorignore`, so no protected-file edit was needed.
+  - New tests fail if either entry is removed.
+  - The file guard now refuses any staged path under `data/`, whatever its name or content, even a `synthetic-*` fixture. The rule is anchored at the repository root.
+- **Retention.** The sweeper keeps stored `inputs/` and `outputs/` objects forever, and `SweepReport.expired` is removed.
+  - Temp files, work directories, and unexpected entries are still removed after 1 h.
+  - Work directories are still deleted after every attempt.
+- **Domain.** `DocumentJob.expire`, `RETENTION_WINDOW`, and `ErrorCode.JOB_EXPIRED` are removed (D-19 superseded). A document in review now waits for HR.
+- **Docs.**
+  - `AGENTS.md`: agents must never read, list, or search `data/`.
+  - `SECURITY.md`: real CVs may be in the checkout only in `data/`, written by the app; exclude `data/` from Time Machine by hand.
+  - `THREAT_MODEL.md`: TB-D updated; residual risks 11–13 added.
+  - `data-retention.md` §3–§5; `error-codes.md`; `product-scope.md` (D-06 and D-19 superseded, D-22 to D-24 added); a Stage 3 follow-up note in `stage-plan.md`.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| `make check` | exit 0 |
+| file guard `--all` | `89 file(s) checked, none refused.` |
+| `ruff format --check .` / `ruff check .` | `51 files already formatted` / `All checks passed!` |
+| `mypy` | `Success: no issues found in 50 source files` |
+| `pytest` | `861 passed` (10 fewer than the commit: the expiry tests were removed and new tests added) |
+| `vitest run` | `7 passed (7)` |
+| `git check-ignore -v data/inputs/x.pdf` | `.gitignore:9:data/` |
+
+Mutation check. Three bugs were planted one at a time; each was caught, and all files were restored:
+
+| Planted bug | Tests failed |
+|---|---|
+| Sweeper removes old stored objects | 1 |
+| File guard no longer blocks `data/` | 3 |
+| `data/` removed from `.gitignore` | 1 |
+
+### Tests added or changed
+
+- **Added:**
+  - the default root is `<project>/data`;
+  - `data/` is listed in `.gitignore` and `.cursorignore`;
+  - a root inside a project checkout is allowed;
+  - stored objects a year old are kept;
+  - the guard refuses three kinds of `data/` paths and allows a nested `.../data/` source directory.
+- **Removed:** the git-checkout refusal tests, the `expire` guard, transition, and property cases, and the 24 h sweeper test.
+- **Retargeted:** the sweeper failure-counting and future-timestamp tests now use temp files instead of stored objects.
+
+### Accepted risks (tech lead)
+
+- **Cursor can reach real CVs.** They sit inside the Cursor workspace, and `.cursorignore` is best-effort. An agent's terminal command could still read `data/`.
+- **Backups.** Time Machine backs up `data/` until you run `tmutil addexclusion <project>/data`. The app does not do this, because it runs no subprocesses.
+- **No automatic expiry.** CVs remain on the laptop until HR deletes them.
+
+### Manual verification
+
+- **Permissions:** after the app first writes files, run `ls -ld data data/inputs` and expect `drwx------`. Run `ls -l data/inputs` and expect `-r--------` for each file.
+- **Another account:** `sudo -u <other-user> ls <project>/data` should print "Permission denied".
+- **Manual deletion:** quit the app, then run `rm -rf <project>/data`.
+
+### Suggested commit message
+
+```text
+feat(storage): keep runtime files in ignored project data/, manual deletion only
+
+- Default storage root is <project>/data (git- and cursor-ignored, refused by file guard)
+- Sweeper never removes stored inputs/outputs by age; leftovers still cleared after 1 h
+- Remove DocumentJob.expire, RETENTION_WINDOW, and JOB_EXPIRED
+- Decisions D-22 to D-24; SECURITY, THREAT_MODEL, AGENTS, retention docs updated
+```

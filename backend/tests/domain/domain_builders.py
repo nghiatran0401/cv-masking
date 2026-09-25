@@ -8,7 +8,6 @@ from cv_masking.domain.document_job import DocumentJob, DocumentState
 from cv_masking.domain.findings import FindingCounts
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
-from cv_masking.domain.limits import RETENTION_WINDOW
 from cv_masking.domain.policy import EntityType, MaskingPolicy
 from cv_masking.domain.verification import VerificationOutcome, VerificationResult
 
@@ -47,11 +46,6 @@ def new_object_ref() -> ObjectRef:
 
 def later(job: DocumentJob, minutes: int = 1) -> datetime:
     return job.updated_at + timedelta(minutes=minutes)
-
-
-def after_retention(job: DocumentJob) -> datetime:
-    assert job.uploaded_at is not None
-    return max(later(job), job.uploaded_at + RETENTION_WINDOW)
 
 
 def verification_for(

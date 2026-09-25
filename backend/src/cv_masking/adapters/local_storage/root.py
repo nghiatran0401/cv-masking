@@ -1,4 +1,4 @@
-"""The per-user cache root and owner-only, symlink-refusing access to its directories.
+"""The per-user storage root and owner-only, symlink-refusing access to its directories.
 
 The root is resolved once when prepared. After that every operation goes
 through a directory file descriptor opened with O_NOFOLLOW, so a symlink planted
@@ -25,7 +25,7 @@ logger = logging.getLogger("cv_masking.storage")
 DIR_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
 OBJECT_MODE: Final = 0o400
-ROOT_MARKER: Final = ".cv-masking-cache"
+ROOT_MARKER: Final = ".cv-masking-data"
 SPOTLIGHT_MARKER: Final = ".metadata_never_index"
 EXTENSIONS: Final = {DocumentFormat.PDF: ".pdf", DocumentFormat.DOCX: ".docx"}
 
@@ -44,8 +44,12 @@ class StoreKind(StrEnum):
     WORK = "work"
 
 
-def default_cache_root() -> Path:
-    return Path.home() / "Library" / "Caches" / "CVMasking"
+_PROJECT_ROOT: Final = Path(__file__).resolve().parents[5]
+
+
+def default_storage_root() -> Path:
+    """``<project>/data``; the name must stay listed in .gitignore and .cursorignore."""
+    return _PROJECT_ROOT / "data"
 
 
 def object_name(ref: ObjectRef, document_format: DocumentFormat) -> str:
@@ -81,12 +85,6 @@ def _require_owned_dir(fd: int, *, tighten: bool) -> None:
         logger.warning("storage directory permissions tightened to owner-only")
 
 
-def _refuse_inside_git_checkout(root: Path) -> None:
-    for directory in (root, *root.parents):
-        if os.path.lexists(directory / ".git"):
-            raise StorageError(ErrorCode.STORAGE_PATH_REJECTED)
-
-
 def _create_marker(dir_fd: int, name: str) -> None:
     try:
         os.close(os.open(name, _CREATE_FILE, FILE_MODE, dir_fd=dir_fd))
@@ -96,8 +94,8 @@ def _create_marker(dir_fd: int, name: str) -> None:
             raise StorageError(ErrorCode.STORAGE_PATH_REJECTED) from None
 
 
-class CacheRoot:
-    """A validated, dedicated, owner-only cache directory. Build with ``prepare``."""
+class StorageRoot:
+    """A validated, dedicated, owner-only storage directory. Build with ``prepare``."""
 
     __slots__ = ("_path",)
 
@@ -109,12 +107,11 @@ class CacheRoot:
         return self._path
 
     @classmethod
-    def prepare(cls, path: Path) -> "CacheRoot":
+    def prepare(cls, path: Path) -> "StorageRoot":
         if not isinstance(path, Path) or not path.is_absolute() or path.name in {"", ".", ".."}:
             raise StorageError(ErrorCode.STORAGE_PATH_REJECTED)
         try:
             root = Path(os.path.realpath(path.parent, strict=True)) / path.name
-            _refuse_inside_git_checkout(root)
             try:
                 os.mkdir(root, DIR_MODE)
                 created = True
