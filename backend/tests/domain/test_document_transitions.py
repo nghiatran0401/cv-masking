@@ -15,12 +15,7 @@ from domain_builders import (
 )
 
 from cv_masking.domain.codes import ErrorCode
-from cv_masking.domain.document_job import (
-    CANCELLABLE_STATES,
-    TERMINAL_STATES,
-    DocumentJob,
-    DocumentState,
-)
+from cv_masking.domain.document_job import CANCELLABLE_STATES, DocumentJob, DocumentState
 from cv_masking.domain.errors import InvalidTransitionError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.policy import MaskingPolicy
@@ -72,8 +67,6 @@ ALLOWED: dict[tuple[DocumentState, str], DocumentState] = {
     **{(state, "cancel"): S.CANCELLED for state in CANCELLABLE_STATES},
 }
 
-MATRIX = [(state, name) for state in DocumentState for name in COMMANDS]
-
 
 def test_matrix_covers_every_command_method() -> None:
     public = {
@@ -84,40 +77,16 @@ def test_matrix_covers_every_command_method() -> None:
     assert public - {"create"} == set(COMMANDS)
 
 
-def test_cancellable_states_are_exactly_the_non_terminal_non_review_states() -> None:
-    assert set(DocumentState) - TERMINAL_STATES - {S.REVIEW_REQUIRED} == CANCELLABLE_STATES
-
-
-@pytest.mark.parametrize(("state", "command"), MATRIX, ids=[f"{s}-{c}" for s, c in MATRIX])
-def test_transition_matrix(state: DocumentState, command: str) -> None:
+@pytest.mark.parametrize("state", list(DocumentState))
+def test_only_documented_transitions_succeed(state: DocumentState) -> None:
     job = job_in_state(state)
-    assert job.state is state
-    expected = ALLOWED.get((state, command))
-    if expected is None:
-        with pytest.raises(InvalidTransitionError):
-            COMMANDS[command](job)
-        return
-    result = COMMANDS[command](job)
-    assert result.state is expected
-    assert result.version == job.version + 1
-    assert result.updated_at > job.updated_at
-    assert result.document_id == job.document_id
-    assert result.batch_id == job.batch_id
-    assert result.created_at == job.created_at
-
-
-@pytest.mark.parametrize("state", sorted(TERMINAL_STATES))
-def test_terminal_states_reject_every_command(state: DocumentState) -> None:
-    job = job_in_state(state)
-    for command in COMMANDS.values():
-        with pytest.raises(InvalidTransitionError):
-            command(job)
-
-
-def test_rejected_transition_leaves_job_unchanged() -> None:
-    job = job_in_state(S.QUEUED)
-    snapshot = job
-    with pytest.raises(InvalidTransitionError):
-        job.deny_review(later(job))
-    assert job == snapshot
-    assert job.state is S.QUEUED
+    for name, command in COMMANDS.items():
+        expected = ALLOWED.get((state, name))
+        if expected is None:
+            with pytest.raises(InvalidTransitionError):
+                command(job)
+            continue
+        result = command(job)
+        assert result.state is expected, name
+        assert result.version == job.version + 1
+        assert (result.document_id, result.batch_id) == (job.document_id, job.batch_id)

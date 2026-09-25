@@ -1,6 +1,9 @@
+import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from service_helpers import ManualClock
 
 from cv_masking.adapters.local_storage import (
     LocalInputStore,
@@ -9,11 +12,13 @@ from cv_masking.adapters.local_storage import (
     LocalWorkArea,
     StorageRoot,
 )
+from cv_masking.adapters.sqlite import SqliteMetadataStore
+from cv_masking.application import JobService
 
 
 @pytest.fixture
 def root(tmp_path: Path) -> StorageRoot:
-    return StorageRoot.prepare(tmp_path / "cache")
+    return StorageRoot.prepare(tmp_path / "data")
 
 
 @pytest.fixture
@@ -44,3 +49,34 @@ def outside(tmp_path: Path) -> Path:
     (directory / "keep.txt").write_bytes(b"synthetic outside file\n")
     (directory / "keep.txt").chmod(0o600)
     return directory
+
+
+@pytest.fixture
+def store(root: StorageRoot) -> SqliteMetadataStore:
+    return SqliteMetadataStore.open(root)
+
+
+@pytest.fixture
+def raw(store: SqliteMetadataStore) -> Iterator[sqlite3.Connection]:
+    """A plain connection that bypasses the store, to inspect or tamper with the file."""
+    conn = sqlite3.connect(store.path, isolation_level=None)
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def clock() -> ManualClock:
+    return ManualClock()
+
+
+@pytest.fixture
+def service(
+    store: SqliteMetadataStore,
+    input_store: LocalInputStore,
+    output_store: LocalOutputStore,
+    clock: ManualClock,
+) -> JobService:
+    return JobService(store, input_store, output_store, clock)

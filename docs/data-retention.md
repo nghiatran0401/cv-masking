@@ -2,6 +2,7 @@
 
 Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implemented in
 Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D-24).
+Stage 4 added the SQLite metadata store (D-25, D-26).
 Metadata follows in Stage 4, recovery in Stage 12, shutdown in Stage 15.
 
 ## 1. Privacy assumptions
@@ -43,10 +44,10 @@ All runtime files live in the project's `data/` folder (decision D-22):
 
 | Platform | Location |
 |---|---|
-| macOS | `<project>/data/` (files); SQLite metadata location is decided in Stage 4 (proposed: the same folder) |
+| macOS | `<project>/data/` (files and the SQLite metadata database `data/metadata/jobs.sqlite3`) |
 | Windows | Future stage (D-08) |
 
-File layout (Stage 3):
+File layout (Stages 3 and 4):
 
 ```text
 <project>/data/                      0700, owned by the HR user
@@ -55,6 +56,8 @@ File layout (Stage 3):
   inputs/<uuid4>.pdf|.docx           0400 uploaded copies
   outputs/<uuid4>.pdf|.docx          0400 masked outputs
   work/<uuid4>/                      0700 one directory per processing attempt
+  metadata/                          0700 never swept
+    jobs.sqlite3 (+ -wal, -shm)      0600 job metadata (no document content)
 ```
 
 Rules:
@@ -81,6 +84,15 @@ Rules:
   read-only, then hard-linked to its final name (a link never replaces an existing file),
   and the directory is fsynced. A partial file is never visible under a final name, and
   no input or output is ever overwritten.
+- **Metadata database.** `metadata/jobs.sqlite3` holds only random IDs, states, versions,
+  timestamps, sizes, SHA-256 hashes, finding counts per entity type, closed error and review
+  codes, and software versions. There is no column for filenames, text, entity values, or
+  exception details, and every text column has a CHECK constraint that refuses free text
+  (a test writes a synthetic name and address into each one). The file is created `0600`
+  without following symlinks; the app refuses to open it (or its `-wal`/`-shm` files) if it
+  is a symlink, a hard link, owned by someone else, or readable by others. It uses
+  `secure_delete` (deleted rows are zeroed) and truncates the WAL after every deletion. An
+  unknown, newer, edited, or extended schema is refused rather than adopted or migrated.
 - **Time Machine backs up `data/` by default.** Unlike `~/Library/Caches`, a project
   folder is included in backups, so deleted CVs could survive on the backup disk. Exclude
   it once by hand (the app runs no subprocess): `tmutil addexclusion <project>/data`.
@@ -93,6 +105,7 @@ Checks (after the app has created the folder):
 ```bash
 ls -ld data data/inputs            # expect drwx------ <hr-user>
 ls -l data/inputs data/outputs     # expect -r-------- <hr-user> for each file
+ls -l data/metadata                # expect -rw------- <hr-user> jobs.sqlite3
 tmutil isexcluded data             # expect [Excluded] after tmutil addexclusion
 git check-ignore data/x            # expect: data/x (ignored)
 ```
@@ -110,7 +123,7 @@ by file permissions (A-2, A-3).
 | Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
 | ZIP export | data/exports (later stage) | Streamed download finishes, or 1 h after creation. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
-| SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | Application Support / LOCALAPPDATA | Batch is purged (all its documents purged). No long-term audit trail (D-11). |
+| SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |
 | Original filenames (display only) | Browser tab memory | Tab closed or reloaded. |
 | Extracted text, detected values, decompressed DOCX parts | Worker process memory | End of the job; never written to disk by the app. |
@@ -138,10 +151,16 @@ them; to erase everything by hand, quit the app and delete `<project>/data/`.
    to remove an entry is counted and retried on the next run.
 4. **Startup:** runs the sweeper before accepting requests; documents found mid-processing are
    recovered per Stage 12 (bounded retry) or failed with `JOB_INTERRUPTED`.
-5. **HR "Clear all":** deletes every batch, file, and metadata row immediately.
-6. **Graceful shutdown:** deletes work files; in-flight jobs return to `QUEUED` for recovery.
+5. **Reconcile (Stage 4 service, scheduled in Stage 12, D-26):** compares stored files with
+   the metadata. It deletes an input or output that no document needs any more (for example
+   when a deletion after a commit failed), and a file with no metadata row once it is older
+   than 1 h (a younger one may be an upload still being recorded).
+6. **Batch purge:** deletes the batch's files first, then its rows; if a file cannot be
+   deleted, the rows stay and the purge can be repeated.
+7. **HR "Clear all":** deletes every batch, file, and metadata row immediately.
+8. **Graceful shutdown:** deletes work files; in-flight jobs return to `QUEUED` for recovery.
    Inputs, outputs, and metadata are kept (D-24).
-7. **Uninstall (Stage 15):** documented steps remove the application root entirely.
+9. **Uninstall (Stage 15):** documented steps remove the application root entirely.
 
 ## 6. Hash handling
 

@@ -7,7 +7,7 @@ format. No caller-supplied name or path ever reaches a store.
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO, Final, Protocol
 
@@ -58,6 +58,25 @@ class StoredObject:
             raise InvariantError("StoredObject.size_bytes is out of range")
 
 
+@dataclass(frozen=True, slots=True)
+class ObjectListing:
+    """A stored object found on disk, for reconciling files against metadata."""
+
+    ref: ObjectRef
+    document_format: DocumentFormat
+    modified_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ref, ObjectRef):
+            raise InvariantError("ObjectListing.ref must be an ObjectRef")
+        if not isinstance(self.document_format, DocumentFormat):
+            raise InvariantError("ObjectListing.document_format must be a DocumentFormat")
+        if not isinstance(self.modified_at, datetime) or self.modified_at.utcoffset() != timedelta(
+            0
+        ):
+            raise InvariantError("ObjectListing.modified_at must be a UTC datetime")
+
+
 class ObjectSink(Protocol):
     """Write-only view of an object being stored."""
 
@@ -82,6 +101,10 @@ class ObjectStore(Protocol):
 
     def delete(self, ref: ObjectRef, document_format: DocumentFormat) -> bool:
         """Delete the object; False if it did not exist."""
+        ...
+
+    def list_objects(self) -> tuple[ObjectListing, ...]:
+        """Every well-formed stored object (temp files and stray entries are not listed)."""
         ...
 
 

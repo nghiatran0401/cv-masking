@@ -10,7 +10,8 @@ A single-user web app running on the HR user's bank-managed macOS laptop
 (Windows is a future stage and will need this model revisited). The browser UI talks to a FastAPI server on `127.0.0.1`. A local worker
 pool validates, detects, redacts, and independently verifies each CV (PDF or
 DOCX; each is redacted and verified in its own format). Files
-live in the project's `data/` folder (D-22); job metadata lives in SQLite. No component
+live in the project's `data/` folder (D-22); job metadata lives in SQLite at
+`data/metadata/jobs.sqlite3` (D-25). No component
 makes network calls beyond loopback.
 
 ## 2. Assets
@@ -159,3 +160,6 @@ flowchart LR
     on the backup disk (D-22).
 13. Stored inputs and outputs are never deleted automatically (D-23); they stay on the
     laptop until HR deletes them.
+14. The metadata database keeps each input's SHA-256 until its batch is purged. A hash can
+    confirm that a known file was processed. `secure_delete` zeroes purged rows in the live
+    file, but APFS snapshots or backups taken earlier may still hold them.

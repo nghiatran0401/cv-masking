@@ -10,7 +10,7 @@ import os
 import re
 import stat
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, contextmanager, suppress
 from enum import StrEnum
 from pathlib import Path
 from typing import Final
@@ -42,6 +42,10 @@ class StoreKind(StrEnum):
     INPUTS = "inputs"
     OUTPUTS = "outputs"
     WORK = "work"
+
+
+METADATA_DIR: Final = "metadata"
+"""Holds the SQLite database. Not a StoreKind, so the sweeper never looks inside."""
 
 
 _PROJECT_ROOT: Final = Path(__file__).resolve().parents[5]
@@ -122,8 +126,8 @@ class StorageRoot:
                 _require_owned_dir(root_fd, tighten=True)
                 cls._claim(root_fd, created=created)
                 _create_marker(root_fd, SPOTLIGHT_MARKER)
-                for kind in StoreKind:
-                    cls._prepare_kind(root_fd, kind)
+                for directory in (*StoreKind, METADATA_DIR):
+                    cls._prepare_directory(root_fd, directory)
             finally:
                 os.close(root_fd)
         except OSError as error:
@@ -139,31 +143,42 @@ class StorageRoot:
         _create_marker(root_fd, ROOT_MARKER)
 
     @staticmethod
-    def _prepare_kind(root_fd: int, kind: StoreKind) -> None:
+    def _prepare_directory(root_fd: int, name: str) -> None:
         with suppress(FileExistsError):
-            os.mkdir(kind.value, DIR_MODE, dir_fd=root_fd)
-        kind_fd = os.open(kind.value, _OPEN_DIR, dir_fd=root_fd)
+            os.mkdir(name, DIR_MODE, dir_fd=root_fd)
+        dir_fd = os.open(name, _OPEN_DIR, dir_fd=root_fd)
         try:
-            _require_owned_dir(kind_fd, tighten=True)
+            _require_owned_dir(dir_fd, tighten=True)
         finally:
-            os.close(kind_fd)
+            os.close(dir_fd)
+
+    @property
+    def metadata_path(self) -> Path:
+        return self._path / METADATA_DIR
+
+    def open_kind(self, kind: StoreKind) -> AbstractContextManager[int]:
+        """A file descriptor for one kind directory, re-checked on every use."""
+        return self._open_directory(kind.value)
+
+    def open_metadata(self) -> AbstractContextManager[int]:
+        """A file descriptor for the metadata directory, re-checked on every use."""
+        return self._open_directory(METADATA_DIR)
 
     @contextmanager
-    def open_kind(self, kind: StoreKind) -> Iterator[int]:
-        """A file descriptor for one kind directory, re-checked on every use."""
+    def _open_directory(self, name: str) -> Iterator[int]:
         try:
             root_fd = os.open(self._path, _OPEN_DIR)
         except OSError as error:
             raise StorageError(ErrorCode.STORAGE_PATH_REJECTED) from error
         try:
             try:
-                kind_fd = os.open(kind.value, _OPEN_DIR, dir_fd=root_fd)
+                dir_fd = os.open(name, _OPEN_DIR, dir_fd=root_fd)
             except OSError as error:
                 raise StorageError(ErrorCode.STORAGE_PATH_REJECTED) from error
             try:
-                _require_owned_dir(kind_fd, tighten=False)
-                yield kind_fd
+                _require_owned_dir(dir_fd, tighten=False)
+                yield dir_fd
             finally:
-                os.close(kind_fd)
+                os.close(dir_fd)
         finally:
             os.close(root_fd)

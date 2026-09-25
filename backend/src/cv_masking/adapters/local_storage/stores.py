@@ -5,12 +5,14 @@ import logging
 import os
 import stat
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import BinaryIO, ClassVar, Final
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from cv_masking.adapters.local_storage.root import (
     FILE_MODE,
     OBJECT_MODE,
+    OBJECT_NAME_RE,
     StorageRoot,
     StoreKind,
     object_name,
@@ -20,7 +22,13 @@ from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import ObjectRef, Sha256Digest
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
-from cv_masking.ports.storage import ObjectSink, Producer, StorageError, StoredObject
+from cv_masking.ports.storage import (
+    ObjectListing,
+    ObjectSink,
+    Producer,
+    StorageError,
+    StoredObject,
+)
 
 logger = logging.getLogger("cv_masking.storage")
 
@@ -163,6 +171,30 @@ class _LocalObjectStore:
                 raise StorageError(ErrorCode.STORAGE_WRITE_FAILED) from error
         logger.info("deleted %s object %s", self._kind, ref)
         return True
+
+    def list_objects(self) -> tuple[ObjectListing, ...]:
+        listings: list[ObjectListing] = []
+        with self._root.open_kind(self._kind) as dir_fd:
+            for name in os.listdir(dir_fd):
+                if OBJECT_NAME_RE.fullmatch(name) is None:
+                    continue
+                try:
+                    info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                except OSError as error:
+                    raise StorageError(ErrorCode.STORAGE_PATH_REJECTED) from error
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                stem, extension = name.split(".")
+                listings.append(
+                    ObjectListing(
+                        ObjectRef(UUID(stem)),
+                        DocumentFormat(extension),
+                        datetime.fromtimestamp(info.st_mtime, UTC),
+                    )
+                )
+        return tuple(listings)
 
 
 class LocalInputStore(_LocalObjectStore):

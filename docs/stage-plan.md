@@ -92,6 +92,10 @@ Execute Stage 4 only. Add SQLite repository, migrations, and application service
 
 Acceptance: Database inspection proves no raw PII fields; transitions are atomic; corrupted/invalid transitions fail closed.
 
+Status: complete (committed). The database is `data/metadata/jobs.sqlite3`; purge deletes
+everything about a batch (D-25); reconciliation is a service call scheduled in Stage 12 (D-26).
+The test suite was also trimmed to the essential tests at the tech lead's request.
+
 ## Stage 5 — Batch upload API
 Goal: Receive many files safely, one request per document.
 

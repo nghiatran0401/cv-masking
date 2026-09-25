@@ -4,12 +4,9 @@ import ast
 import sys
 from pathlib import Path
 
-import pytest
-
 SRC = Path(__file__).resolve().parents[2] / "src" / "cv_masking"
-PORTS = sorted((SRC / "ports").rglob("*.py"))
-ADAPTERS = sorted((SRC / "adapters").rglob("*.py"))
-ALL_SOURCES = sorted(SRC.rglob("*.py"))
+WEB_FRAMEWORKS = {"fastapi", "starlette", "uvicorn", "pydantic"}
+NETWORK_AND_PROCESS = {"subprocess", "socket", "urllib.request", "http.client", "ftplib", "smtplib"}
 
 
 def _imports(path: Path) -> set[str]:
@@ -23,30 +20,38 @@ def _imports(path: Path) -> set[str]:
     return modules
 
 
+def _sources(layer: str) -> list[Path]:
+    paths = sorted((SRC / layer).rglob("*.py"))
+    assert paths, layer
+    return paths
+
+
 def _is_stdlib(module: str) -> bool:
     return module.split(".")[0] in sys.stdlib_module_names
 
 
-def test_layers_exist() -> None:
-    assert PORTS
-    assert ADAPTERS
+def test_ports_and_application_depend_only_on_stdlib_domain_and_ports() -> None:
+    for layer in ("ports", "application"):
+        inner = ("cv_masking.domain", "cv_masking.ports", f"cv_masking.{layer}")
+        for path in _sources(layer):
+            for module in _imports(path):
+                allowed = _is_stdlib(module) and module != "sqlite3"
+                assert allowed or module.startswith(inner), (path.name, module)
 
 
-@pytest.mark.parametrize("path", PORTS, ids=lambda p: p.name)
-def test_ports_depend_only_on_stdlib_and_domain(path: Path) -> None:
-    for module in _imports(path):
-        assert _is_stdlib(module) or module.startswith("cv_masking.domain"), module
+def test_adapters_do_not_depend_on_the_api_or_application_layers() -> None:
+    for path in _sources("adapters"):
+        for module in _imports(path):
+            assert module.split(".")[0] not in WEB_FRAMEWORKS, (path.name, module)
+            assert not module.startswith(("cv_masking.api", "cv_masking.application")), module
 
 
-@pytest.mark.parametrize("path", ADAPTERS, ids=lambda p: str(p.relative_to(SRC)))
-def test_adapters_do_not_depend_on_the_api_layer(path: Path) -> None:
-    for module in _imports(path):
-        root = module.split(".")[0]
-        assert root not in {"fastapi", "starlette", "uvicorn", "pydantic"}, module
-        assert not module.startswith("cv_masking.api"), module
+def test_only_the_sqlite_adapter_imports_sqlite() -> None:
+    for path in SRC.rglob("*.py"):
+        if "sqlite3" in _imports(path):
+            assert path.is_relative_to(SRC / "adapters" / "sqlite"), path.name
 
 
-@pytest.mark.parametrize("path", ALL_SOURCES, ids=lambda p: str(p.relative_to(SRC)))
-def test_no_source_module_starts_subprocesses_or_opens_sockets(path: Path) -> None:
-    banned = {"subprocess", "socket", "urllib.request", "http.client", "ftplib", "smtplib"}
-    assert not _imports(path) & banned
+def test_no_source_module_starts_subprocesses_or_opens_sockets() -> None:
+    for path in SRC.rglob("*.py"):
+        assert not _imports(path) & NETWORK_AND_PROCESS, path.name

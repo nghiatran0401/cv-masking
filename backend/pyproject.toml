@@ -53,6 +53,7 @@ files = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests/domain", "tests/application"]
 addopts = ["--strict-markers", "--strict-config", "-ra", "--disable-socket", "--allow-unix-socket"]
 xfail_strict = true
 filterwarnings = [

@@ -91,6 +91,8 @@ laptop and produces permanently redacted copies.
 | D-22 | Runtime files live in `<project>/data/`, inside the checkout, ignored by `.gitignore` and `.cursorignore` and refused by the file guard. The tech lead accepted the residual risks: Cursor/AI tooling working in the same folder, and Time Machine backing it up unless excluded by hand. Supersedes the "outside the repository" rule. | Tech lead, Stage 3 follow-up |
 | D-23 | No automatic deletion of stored inputs and outputs by age; HR deletes them manually. The app still deletes work files after every attempt, and the sweeper removes crash leftovers (temp files, work directories, unexpected entries) after 1 h. | Tech lead, Stage 3 follow-up |
 | D-24 | Quitting the app does not erase inputs, outputs, or metadata (answers Q-07). | Tech lead, Stage 3 follow-up |
+| D-25 | Purging a batch deletes its files and then every metadata row about it (batch, documents, hashes, counts, codes); nothing is kept as a tombstone. Job metadata lives in `data/metadata/jobs.sqlite3`. | Tech lead, Stage 4 |
+| D-26 | File/metadata reconciliation (remove files no document needs, and unreferenced files older than 1 h) is built in Stage 4 as a service call; Stage 12 schedules it. | Tech lead, Stage 4 |
 
 ## 6. Known gaps between approved scope and the stage plan
 

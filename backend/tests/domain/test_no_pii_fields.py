@@ -1,14 +1,14 @@
 """Domain objects have no field that could hold document text, and errors never echo values."""
 
 from collections.abc import Callable
-from dataclasses import fields, is_dataclass
+from dataclasses import fields
 
 import pytest
 from domain_builders import created, later, new_object_ref, uploaded, validating
 
 from cv_masking.domain.batch import Batch
 from cv_masking.domain.document_job import DocumentJob
-from cv_masking.domain.errors import DomainError, InvalidTransitionError
+from cv_masking.domain.errors import DomainError
 from cv_masking.domain.findings import (
     BoundingBox,
     DocxLocation,
@@ -81,27 +81,6 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "error_code",
     ),
 }
-FORBIDDEN_SUBSTRINGS = (
-    "text",
-    "raw",
-    "content",
-    "name",
-    "file",
-    "path",
-    "snippet",
-    "excerpt",
-    "context",
-    "message",
-    "email",
-    "phone",
-    "address",
-)
-# Each allowed exception is a validated, non-free-text field.
-ALLOWED_FIELDS = {
-    (DocxLocation, "part_name"),  # restricted to word/<name>.xml
-    (DocumentJob, "content_sha256"),  # Sha256Digest
-    (DocumentJob, "hidden_content_approved"),  # bool
-}
 # The only str-typed fields; every one is checked against a strict pattern or constant.
 STRING_FIELDS = {
     (Sha256Digest, "value"),
@@ -116,37 +95,14 @@ STRING_FIELDS = {
 MARKER = "Synthetic Candidate Nguyễn 0900000000 synthetic@example.test"
 
 
-@pytest.mark.parametrize("cls", list(EXPECTED_FIELDS), ids=lambda c: c.__name__)
-def test_fields_are_exactly_the_allowlist(cls: type) -> None:
-    assert is_dataclass(cls)
-    assert tuple(f.name for f in fields(cls)) == EXPECTED_FIELDS[cls]
-
-
-@pytest.mark.parametrize("cls", list(EXPECTED_FIELDS), ids=lambda c: c.__name__)
-def test_no_field_name_suggests_document_data(cls: type) -> None:
-    for name in EXPECTED_FIELDS[cls]:
-        if (cls, name) in ALLOWED_FIELDS:
-            continue
-        assert not any(word in name for word in FORBIDDEN_SUBSTRINGS), f"{cls.__name__}.{name}"
+def test_fields_are_exactly_the_allowlist() -> None:
+    for cls, expected in EXPECTED_FIELDS.items():
+        assert tuple(f.name for f in fields(cls)) == expected, cls.__name__
 
 
 def test_string_fields_are_exactly_the_validated_set() -> None:
     found = {(cls, f.name) for cls in EXPECTED_FIELDS for f in fields(cls) if f.type is str}
     assert found == STRING_FIELDS
-
-
-def test_domain_objects_are_slotted() -> None:
-    for cls in EXPECTED_FIELDS:
-        assert "__slots__" in cls.__dict__, cls.__name__
-
-
-def test_domain_objects_are_immutable() -> None:
-    job = created()
-    with pytest.raises(AttributeError):
-        job.state = job.state  # type: ignore[misc]
-    # CPython raises TypeError for unknown attributes on frozen slotted dataclasses.
-    with pytest.raises((AttributeError, TypeError)):
-        job.extra = MARKER  # type: ignore[attr-defined]
 
 
 def _attempts() -> list[Callable[[], object]]:
@@ -179,17 +135,10 @@ def _attempts() -> list[Callable[[], object]]:
     ]
 
 
-@pytest.mark.parametrize("index", range(len(_attempts())))
-def test_error_messages_never_echo_the_offending_value(index: int) -> None:
-    attempt = _attempts()[index]
-    with pytest.raises(DomainError) as caught:
-        attempt()
-    rendered = f"{caught.value}{caught.value!r}{caught.value.args}"
-    for fragment in ("Nguyễn", "0900000000", "synthetic@example.test", "Synthetic Candidate"):
-        assert fragment not in rendered
-
-
-def test_transition_error_carries_only_command_and_state() -> None:
-    error = InvalidTransitionError("cancel", "completed", "detail")
-    assert (error.command, error.state) == ("cancel", "completed")
-    assert str(error) == "cancel is not allowed from state completed: detail"
+def test_error_messages_never_echo_the_offending_value() -> None:
+    for attempt in _attempts():
+        with pytest.raises(DomainError) as caught:
+            attempt()
+        rendered = f"{caught.value}{caught.value!r}{caught.value.args}"
+        for fragment in ("Nguyễn", "0900000000", "synthetic@example.test", "Synthetic Candidate"):
+            assert fragment not in rendered
