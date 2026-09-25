@@ -19,6 +19,7 @@ from cv_masking.domain.codes import (
     reason_format,
 )
 from cv_masking.domain.formats import DocumentFormat
+from cv_masking.domain.verification import VERIFY_FAILURE_PRECEDENCE
 
 DOC = Path(__file__).resolve().parents[3] / "docs" / "error-codes.md"
 _CODE_ROW = re.compile(r"^\| `([A-Z0-9_]+)` \| (R|T|—) \|", re.MULTILINE)
@@ -61,6 +62,12 @@ def test_review_reason_kinds_match_the_doc() -> None:
     rows = _REASON_ROW.findall(_doc_sections()[0])
     assert len(rows) == len(ReviewReason)
     assert dict(rows) == {reason.value: kind.value for reason, kind in REVIEW_REASON_KINDS.items()}
+
+
+def test_verification_precedence_matches_the_doc() -> None:
+    paragraph = _doc_sections()[1].split("(`VERIFY_FAILURE_PRECEDENCE`):", 1)[1].split(". ", 1)[0]
+    documented = tuple(re.findall(r"`([A-Z_]+)`", paragraph))
+    assert documented == tuple(code.value for code in VERIFY_FAILURE_PRECEDENCE)
 
 
 def test_error_codes_and_review_reasons_are_disjoint() -> None:

@@ -160,7 +160,7 @@ was added.
 | Test file | Count | What it proves |
 |---|---|---|
 | `test_document_transitions.py` | 161 | Every one of the 14 commands against every one of the 11 states. Only the documented transitions succeed; each success bumps `version` by one and keeps the ids and `created_at`. Terminal states reject every command. The matrix covers every public command method. |
-| `test_document_guards.py` | 93 | `reject_upload` and `fail` accept exactly the codes listed per stage and format (checked against a hand-written list, not derived from the implementation). Validation review accepts only blocking and hidden-content reasons of the right format. Hidden-content approval sets the flag and requeues. Blocking, mixed and verifier reviews can't be approved. A findings approval needs a `PASSED` verification. Deny works on every review kind. Expiry happens at exactly 24 h and not 1 µs earlier. Attempt limit, requeue discarding output, verification ref and format checks, the lowest failure code winning. Time can't go backwards and must be UTC. |
+| `test_document_guards.py` | 93 | `reject_upload` and `fail` accept exactly the codes listed per stage and format (checked against a hand-written list, not derived from the implementation). Validation review accepts only blocking and hidden-content reasons of the right format. Hidden-content approval sets the flag and requeues. Blocking, mixed and verifier reviews can't be approved. A findings approval needs a `PASSED` verification. Deny works on every review kind. Expiry happens at exactly 24 h and not 1 µs earlier. Attempt limit, requeue discarding output, verification ref and format checks, the most serious failure code winning. Time can't go backwards and must be UTC. |
 | `test_document_invariants.py` | 63 | 51 impossible stored-job combinations are rejected, covering types, time, upload, processing, review and outcome fields. Every valid state round-trips. |
 | `test_document_properties.py` | 1 (600 examples) | Random command sequences with random arguments, starting from any state (including every review variant), never raise anything but `InvalidTransitionError`. Terminal states are absorbing, `version` rises by exactly one per transition, attempts stay at or below 3, `COMPLETED` always has a `PASSED` verification of its own output, and error codes appear only on `FAILED`/`CANCELLED` and never as `SECURITY_*`. |
 | `test_batch.py` | 29 | Salary toggle and its policy. Exactly 100 files. The batch is locked after start. `finish` rules. `purge` works once. Impossible stored batches are rejected. |
@@ -232,14 +232,122 @@ was added.
 
 ## Questions/decisions for the tech lead
 
-1. **`JOB_EXPIRED`.** Is the new terminal code acceptable? The alternative was reusing
-   `JOB_CANCELLED`, but that would hide why the input was deleted.
-2. **Order of verification failure codes.** A `FAILED` verification with several codes
-   stores the alphabetically lowest one as the job's `error_code`. The verification result
-   keeps all of them. Is a fixed precedence (e.g. residual finding first) preferred for the
-   HR display?
-3. **Carried over from Stage 1.** Should there be a pre-commit guard against staged
-   document or data files, and an npm install-script policy? Neither is implemented.
+All three were answered after the Stage 2 commit and are implemented in the follow-up
+below.
+
+1. **`JOB_EXPIRED`.** Accepted (D-19).
+2. **Order of verification failure codes.** A fixed precedence was chosen (D-20).
+3. **Pre-commit guard and npm install-script policy.** The tech lead asked for the
+   agent's recommendation, to be implemented if important. Both were built (D-21).
+
+## Follow-up after tech-lead answers
+
+### Changes
+
+- **Verification precedence.** `VERIFY_FAILURE_PRECEDENCE` in `domain/verification.py`
+  ranks the codes:
+  1. `VERIFY_RESIDUAL_FINDING`
+  2. `VERIFY_RESIDUAL_DETECTION`
+  3. `VERIFY_RESIDUAL_METADATA`
+  4. `VERIFY_OUTPUT_INVALID`
+  5. `VERIFY_PAGE_COUNT_MISMATCH`
+  6. `VERIFY_STRUCTURE_MISMATCH`
+
+  `VerificationResult.primary_failure_code` picks the highest-ranked code, and
+  `record_verification` stores it as the job's `error_code`, replacing the alphabetical
+  minimum. All codes stay on the verification result. The order is documented in
+  `docs/error-codes.md` and checked by a doc-sync test.
+- **File guard.** `scripts/check-repo-files.sh` (bash 3.2, the macOS system shell) checks
+  the content in the git index.
+  - `--staged` runs from the pre-commit hook `scripts/git-hooks/pre-commit`.
+  - `--all` is the new `make guard` target, and runs first in `make check`.
+  - `make install` now runs `make hooks`, which is `git config core.hooksPath
+    scripts/git-hooks`. It changes only this repository's local git config.
+  - It refuses blocked extensions (case-insensitive), content signatures (PDF, ZIP/DOCX,
+    OLE/DOC, RTF, SQLite, PNG, JPEG, GIF, gzip, 7z, RAR) under any name, and files over
+    1 MiB. The one exception is `tests/fixtures/synthetic/**/synthetic-*`, which still
+    has the size limit.
+  - Output is counts only, never paths, so an agent-run commit can't put a CV's file name
+    into chat.
+- **npm.** `ignore-scripts=true` added to `frontend/.npmrc`. No dependency needs an
+  install script. `fsevents` ships a prebuilt binary, and npm had already skipped its
+  unapproved scripts.
+
+### Files
+
+| File | Change |
+|---|---|
+| `backend/src/cv_masking/domain/verification.py`, `document_job.py` | Precedence and `primary_failure_code` |
+| `backend/tests/domain/test_value_objects.py`, `test_document_guards.py`, `test_codes.py` | Precedence tests |
+| `scripts/check-repo-files.sh`, `scripts/git-hooks/pre-commit` | Added (executable) |
+| `backend/tests/repo/test_file_guard.py`, `test_npm_policy.py` | Added |
+| `Makefile` | `hooks` and `guard` targets; `install` depends on `hooks`; `check` runs `guard` first |
+| `frontend/.npmrc` | `ignore-scripts=true` |
+| `SECURITY.md`, `README.md`, `docs/error-codes.md`, `docs/product-scope.md` (D-19 to D-21) | Updated |
+
+### Subprocesses (security and packaging impact)
+
+The guard tests run `git` and the guard script with `subprocess.run`:
+- fixed argument lists, no shell;
+- inside a pytest temporary directory;
+- with `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, and a temporary `HOME`, so
+  your git configuration and credentials are never used;
+- with only synthetic bytes;
+- with no network (sockets stay blocked for the Python process, and git only touches the
+  local repository).
+
+The subprocesses are dev-only; nothing ships in the runtime package. There are no new
+dependencies.
+
+### Commands and results
+
+- `npm ci --offline`: `added 236 packages … found 0 vulnerabilities`, with no
+  install-script warning.
+- Mutation check of the guard. Each planted bug was caught, then the file was restored and
+  verified with `cmp`:
+  - content check disabled: 11 tests failed;
+  - fixture exception widened to any `*/synthetic/*` path: 3 failed;
+  - size limit disabled: 3 failed.
+- First run of the npm policy test failed because it flagged `preview` as a `pre` hook.
+  The test now checks only real `pre<script>`/`post<script>` pairs.
+- **Final** `make check`: exit 0.
+  - Guard: `71 file(s) checked, none refused`
+  - Ruff: `36 files already formatted`, `All checks passed!`
+  - Prettier and ESLint: clean
+  - mypy: `Success: no issues found in 35 source files`
+  - `tsc`: clean
+  - pytest: `718 passed`
+  - vitest: `Tests 7 passed (7)`
+
+### Tests added
+
+| Test file | Count | What it proves |
+|---|---|---|
+| `test_value_objects.py`, `test_document_guards.py`, `test_codes.py` | +9 | The precedence ranks every `VERIFY_*` code exactly once, with leaks first. The primary code is the highest ranked for each subset. There's no primary code on non-failed results. The job stores `VERIFY_RESIDUAL_METADATA` over `VERIFY_OUTPUT_INVALID`, where the alphabetical order would differ. The doc order matches the code. |
+| `repo/test_file_guard.py` | 41 | Source files pass. 14 blocked extensions are refused, including uppercase. 8 content signatures are refused under a `.txt` name. A file with no extension is checked by content. The 1 MiB limit is exact. Synthetic fixtures pass, and 5 near-miss paths don't. Fixtures still have the size limit. Index content is checked, not the working tree. `--staged` vs `--all`. Output never contains the file name. Tabs, newlines and Vietnamese characters in names are handled. A bad mode exits 2. An end-to-end hook blocks the commit and then allows it once the file is unstaged. |
+| `repo/test_npm_policy.py` | 2 | `.npmrc` refuses install scripts, and `package.json` has no lifecycle or hook scripts. |
+
+### Known limitations
+
+- The hook can be skipped with `git commit --no-verify`; `make check` still catches the
+  file.
+- Plain-text personal data typed into a source or Markdown file isn't detected. Only file
+  types and signatures are.
+- A future synthetic fixture over 1 MiB would need a deliberate change to the guard.
+- `make guard` takes a few seconds because it reads each blob from the index.
+
+### Suggested commit message
+
+```
+chore: verification precedence, repo file guard, npm install-script policy
+
+Rank VERIFY_* failure codes (residual finding first) and store the most
+serious one on the job. Add scripts/check-repo-files.sh as a pre-commit
+hook and make check step that refuses document, image, archive, database,
+and log files by extension and content signature, and files over 1 MiB,
+except tests/fixtures/synthetic/**/synthetic-*; it never prints paths.
+Disable npm install scripts. Record decisions D-19 to D-21.
+```
 
 ## Suggested commit message
 

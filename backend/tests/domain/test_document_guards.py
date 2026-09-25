@@ -320,13 +320,13 @@ def test_verification_for_another_output_is_rejected() -> None:
         job.record_verification(other, later(job))
 
 
-def test_failed_verification_fails_with_the_lowest_code() -> None:
+def test_failed_verification_fails_with_the_most_serious_code() -> None:
     job = verifying(PDF, frozenset({R.DETECT_LOW_CONFIDENCE}))
-    codes = frozenset({E.VERIFY_RESIDUAL_METADATA, E.VERIFY_RESIDUAL_FINDING})
+    codes = frozenset({E.VERIFY_OUTPUT_INVALID, E.VERIFY_RESIDUAL_METADATA})
     result = job.record_verification(
         verification_for(job, VerificationOutcome.FAILED, codes), later(job)
     )
-    assert (result.state, result.error_code) == (S.FAILED, E.VERIFY_RESIDUAL_FINDING)
+    assert (result.state, result.error_code) == (S.FAILED, E.VERIFY_RESIDUAL_METADATA)
     assert result.review_reasons == frozenset()
 
 

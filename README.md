@@ -14,9 +14,9 @@ Node.js ≥ 24 with npm, and GNU Make.
 
 ```bash
 uv python install 3.12   # one-time
-make install             # locked backend + frontend dependencies
+make install             # locked dependencies + pre-commit file guard
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
-make check               # lint + type-check + tests (quality gate)
+make check               # file guard + lint + type-check + tests (quality gate)
 ```
 
 Open <http://127.0.0.1:5173>. Both servers bind to `127.0.0.1` only; the backend

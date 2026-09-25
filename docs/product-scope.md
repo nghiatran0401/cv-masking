@@ -85,6 +85,9 @@ laptop and produces permanently redacted copies.
 | D-16 | DOCX work is added as Stages 6b (validate + extract), 10b (redact), and 11b (verify), placed right after their PDF counterparts. | Tech lead, Stage 0 |
 | D-17 | The Stage 2 domain model is format-neutral from the start: a `DocumentFormat` (PDF, DOCX) and a finding location that is either PDF page + boxes or DOCX part + character range. | Tech lead, Stage 0 |
 | D-18 | Every stage ends with a git commit after all checks pass. | Tech lead, Stage 0 |
+| D-19 | A document still in review 24 h after upload fails with the terminal code `JOB_EXPIRED`. | Tech lead, Stage 2 |
+| D-20 | A failed verification shows HR its most serious code: residual finding, residual detection, residual metadata, invalid output, page-count mismatch, structure mismatch. | Tech lead, Stage 2 |
+| D-21 | A pre-commit and `make check` file guard refuses document, image, data, and log files (by name and content) and files over 1 MiB, except synthetic fixtures. npm install scripts are disabled. | Tech lead, Stage 2 follow-up |
 
 ## 6. Known gaps between approved scope and the stage plan
 

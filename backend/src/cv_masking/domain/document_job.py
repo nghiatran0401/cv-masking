@@ -286,7 +286,7 @@ class DocumentJob:
                 state=DocumentState.FAILED,
                 verification=result,
                 review_reasons=frozenset(),
-                error_code=min(result.failure_codes),
+                error_code=result.primary_failure_code,
             )
         if result.outcome is VerificationOutcome.REVIEW_REQUIRED:
             return self._advance(

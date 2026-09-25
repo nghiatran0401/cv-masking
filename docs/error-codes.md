@@ -158,6 +158,11 @@ validation reasons.
 ### Verification (Stages 11, 11b)
 
 Codes are shared by PDF and DOCX; the job's format says which verifier ran.
+A failed verification keeps every code it found; the job shows the most serious one,
+in this order (`VERIFY_FAILURE_PRECEDENCE`): `VERIFY_RESIDUAL_FINDING`,
+`VERIFY_RESIDUAL_DETECTION`, `VERIFY_RESIDUAL_METADATA`, `VERIFY_OUTPUT_INVALID`,
+`VERIFY_PAGE_COUNT_MISMATCH`, `VERIFY_STRUCTURE_MISMATCH`. Leaked data outranks a
+broken or mismatched output.
 
 | Code | R/T | Meaning |
 |---|---|---|

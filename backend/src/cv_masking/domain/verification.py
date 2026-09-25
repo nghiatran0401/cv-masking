@@ -1,11 +1,22 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Final
 
 from cv_masking.domain._validation import require_identifier, require_semver, require_utc
 from cv_masking.domain.codes import ERROR_CODE_GROUPS, CodeGroup, ErrorCode
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.ids import ObjectRef
+
+VERIFY_FAILURE_PRECEDENCE: Final = (
+    ErrorCode.VERIFY_RESIDUAL_FINDING,
+    ErrorCode.VERIFY_RESIDUAL_DETECTION,
+    ErrorCode.VERIFY_RESIDUAL_METADATA,
+    ErrorCode.VERIFY_OUTPUT_INVALID,
+    ErrorCode.VERIFY_PAGE_COUNT_MISMATCH,
+    ErrorCode.VERIFY_STRUCTURE_MISMATCH,
+)
+"""Most serious first: leaked data outranks a broken or mismatched output."""
 
 
 class VerificationOutcome(StrEnum):
@@ -49,3 +60,8 @@ class VerificationResult:
     @property
     def passed(self) -> bool:
         return self.outcome is VerificationOutcome.PASSED
+
+    @property
+    def primary_failure_code(self) -> ErrorCode | None:
+        """The failure code shown to HR, chosen by VERIFY_FAILURE_PRECEDENCE."""
+        return next((c for c in VERIFY_FAILURE_PRECEDENCE if c in self.failure_codes), None)

@@ -51,6 +51,18 @@ environment local.
 - Committed fixture files must be named `synthetic-*` and live under a
   `tests/fixtures/synthetic/` directory; every other document type is git-ignored.
   Prefer generating fixtures at test time.
+- `scripts/check-repo-files.sh` enforces this on the content in the git index. It runs
+  as a pre-commit hook (installed by `make install`) and on every tracked file in
+  `make check`. It refuses:
+  - document, image, archive, database, spreadsheet, mail, and log extensions;
+  - files whose first bytes identify them as PDF, ZIP/DOCX, OLE/DOC, RTF, SQLite, PNG,
+    JPEG, GIF, gzip, 7z, or RAR, whatever their name;
+  - any file over 1 MiB, including synthetic fixtures.
+
+  It never prints file paths, since a CV's file name often contains the candidate's name.
+  `git commit --no-verify` skips the hook but not `make check`. The guard is a safety
+  net, not a boundary: plain-text personal data in an ordinary source file is not
+  detected.
 - Test names, parametrize ids, snapshots, and assertion messages must not contain entity
   values; use entity type and case index instead.
 
@@ -59,6 +71,9 @@ environment local.
 - Each new dependency or subprocess needs a written justification in the stage handoff:
   purpose, license, network behavior, native code, packaging impact.
 - Lockfiles are committed; versions are pinned.
+- npm never runs dependency install scripts (`ignore-scripts=true` in `frontend/.npmrc`),
+  and `frontend/package.json` must not define lifecycle or `pre`/`post` hook scripts.
+  Both rules are tested.
 - Dependencies that phone home (telemetry, update checks, model downloads at runtime) are
   forbidden unless the behavior is fully disabled in code and tested.
 - Licensing note: PyMuPDF (planned for Stage 6) is AGPL-3.0 or commercial. Bank legal must

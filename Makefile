@@ -4,20 +4,27 @@ BACKEND := backend
 FRONTEND := frontend
 UV_RUN := uv run --locked
 
-.PHONY: help install dev dev-backend dev-frontend fmt lint typecheck test check
+.PHONY: help install hooks guard dev dev-backend dev-frontend fmt lint typecheck test check
 
 help:
-	@echo "make install    Install locked backend and frontend dependencies"
+	@echo "make install    Install locked dependencies and the git pre-commit file guard"
+	@echo "make guard      Refuse tracked documents, images, data files, and logs"
 	@echo "make dev        Run backend (127.0.0.1:8765) and frontend (127.0.0.1:5173)"
 	@echo "make fmt        Format backend and frontend"
 	@echo "make lint       Check formatting and lint"
 	@echo "make typecheck  mypy --strict and tsc"
 	@echo "make test       pytest and vitest"
-	@echo "make check      lint + typecheck + test (quality gate)"
+	@echo "make check      guard + lint + typecheck + test (quality gate)"
 
-install:
+install: hooks
 	cd $(BACKEND) && uv sync --locked
 	cd $(FRONTEND) && npm ci
+
+hooks:
+	git config core.hooksPath scripts/git-hooks
+
+guard:
+	scripts/check-repo-files.sh --all
 
 dev:
 	$(MAKE) -j2 dev-backend dev-frontend
@@ -44,4 +51,4 @@ test:
 	cd $(BACKEND) && $(UV_RUN) pytest
 	cd $(FRONTEND) && npm test
 
-check: lint typecheck test
+check: guard lint typecheck test

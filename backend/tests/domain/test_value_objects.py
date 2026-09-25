@@ -5,7 +5,7 @@ from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 import pytest
 from domain_builders import T0, new_finding_id, new_object_ref
 
-from cv_masking.domain.codes import ErrorCode
+from cv_masking.domain.codes import ERROR_CODE_GROUPS, CodeGroup, ErrorCode
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import (
     MAX_BOXES_PER_FINDING,
@@ -17,7 +17,11 @@ from cv_masking.domain.findings import (
 )
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import REPLACEMENT_LABELS, EntityType
-from cv_masking.domain.verification import VerificationOutcome, VerificationResult
+from cv_masking.domain.verification import (
+    VERIFY_FAILURE_PRECEDENCE,
+    VerificationOutcome,
+    VerificationResult,
+)
 
 BOX = BoundingBox(10.0, 20.0, 110.0, 32.5)
 ID_TYPES = [BatchId, DocumentId, FindingId, ObjectRef]
@@ -234,6 +238,28 @@ def _result(**changes: object) -> VerificationResult:
 def test_verification_passed_flag() -> None:
     assert _result().passed is True
     assert _result(outcome=VerificationOutcome.REVIEW_REQUIRED).passed is False
+
+
+def test_failure_precedence_ranks_every_verify_code_once() -> None:
+    verify_codes = {c for c in ErrorCode if ERROR_CODE_GROUPS[c] is CodeGroup.VERIFICATION}
+    assert len(VERIFY_FAILURE_PRECEDENCE) == len(set(VERIFY_FAILURE_PRECEDENCE))
+    assert set(VERIFY_FAILURE_PRECEDENCE) == verify_codes
+    assert VERIFY_FAILURE_PRECEDENCE[:3] == (
+        ErrorCode.VERIFY_RESIDUAL_FINDING,
+        ErrorCode.VERIFY_RESIDUAL_DETECTION,
+        ErrorCode.VERIFY_RESIDUAL_METADATA,
+    )
+
+
+@pytest.mark.parametrize("rank", range(len(VERIFY_FAILURE_PRECEDENCE)))
+def test_primary_failure_code_is_the_highest_ranked(rank: int) -> None:
+    codes = frozenset(VERIFY_FAILURE_PRECEDENCE[rank:])
+    result = _result(outcome=VerificationOutcome.FAILED, failure_codes=codes)
+    assert result.primary_failure_code is VERIFY_FAILURE_PRECEDENCE[rank]
+
+
+def test_non_failed_result_has_no_primary_failure_code() -> None:
+    assert _result().primary_failure_code is None
 
 
 @pytest.mark.parametrize(
