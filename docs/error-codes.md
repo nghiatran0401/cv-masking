@@ -1,6 +1,8 @@
 # Safe error-code taxonomy and document states
 
-Status: Stage 0 baseline. Implemented as a closed enum in Stage 2; mapped to HTTP
+Status: finalized in Stage 2. Implemented as the closed enums `ErrorCode` and
+`ReviewReason` in `backend/src/cv_masking/domain/codes.py`; the tables below are
+checked against the code by `backend/tests/domain/test_codes.py`. Mapped to HTTP
 responses in Stages 5 and 14.
 
 ## 1. Rules for every error
@@ -18,30 +20,32 @@ responses in Stages 5 and 14.
    convert an error into success or silently skip a document.
 6. **One document's error never changes another document's state.**
 
-## 2. Document states (proposed; finalized in Stage 2)
+## 2. Document states (finalized in Stage 2)
 
 ```mermaid
 stateDiagram-v2
     [*] --> CREATED
-    CREATED --> UPLOADED: upload stored + hashed
-    CREATED --> FAILED: upload rejected
-    UPLOADED --> VALIDATING
-    VALIDATING --> QUEUED: supported
-    VALIDATING --> REVIEW_REQUIRED: unsupported or hidden content
-    VALIDATING --> FAILED: malformed
-    REVIEW_REQUIRED --> QUEUED: HR approves (approvable codes only)
-    QUEUED --> PROCESSING
-    PROCESSING --> VERIFYING: redacted output written
-    PROCESSING --> FAILED
-    VERIFYING --> COMPLETED: PASSED, no review flags
-    VERIFYING --> REVIEW_REQUIRED: PASSED with review flags, or verifier REVIEW_REQUIRED
-    VERIFYING --> FAILED: verifier FAILED
-    REVIEW_REQUIRED --> COMPLETED: HR approves findings (verification already PASSED)
-    REVIEW_REQUIRED --> REJECTED: HR denies
-    CREATED --> CANCELLED
-    UPLOADED --> CANCELLED
-    QUEUED --> CANCELLED
-    PROCESSING --> CANCELLED
+    CREATED --> UPLOADED: mark_uploaded (stored + hashed)
+    CREATED --> FAILED: reject_upload (UPLOAD_*, STORAGE_*, INTERNAL_ERROR)
+    UPLOADED --> VALIDATING: start_validation
+    VALIDATING --> QUEUED: validation_passed
+    VALIDATING --> REVIEW_REQUIRED: validation_needs_review (blocking or hidden content)
+    VALIDATING --> FAILED: fail
+    REVIEW_REQUIRED --> QUEUED: approve_review (hidden content only)
+    QUEUED --> PROCESSING: start_processing (attempt + 1, policy recorded)
+    PROCESSING --> VERIFYING: output_written
+    PROCESSING --> FAILED: fail
+    PROCESSING --> QUEUED: requeue_after_interruption (attempt < 3)
+    VERIFYING --> QUEUED: requeue_after_interruption (attempt < 3)
+    PROCESSING --> FAILED: requeue_after_interruption (attempt = 3, JOB_INTERRUPTED)
+    VERIFYING --> FAILED: requeue_after_interruption (attempt = 3, JOB_INTERRUPTED)
+    VERIFYING --> COMPLETED: record_verification PASSED, no findings reasons
+    VERIFYING --> REVIEW_REQUIRED: record_verification PASSED with findings reasons, or REVIEW_REQUIRED
+    VERIFYING --> FAILED: record_verification FAILED, or fail
+    REVIEW_REQUIRED --> COMPLETED: approve_review (findings only, verification PASSED)
+    REVIEW_REQUIRED --> REJECTED: deny_review
+    REVIEW_REQUIRED --> FAILED: expire (24 h after upload, JOB_EXPIRED)
+    note right of CREATED: cancel is allowed from every non-terminal state except REVIEW_REQUIRED
     COMPLETED --> [*]
     FAILED --> [*]
     REJECTED --> [*]
@@ -49,19 +53,47 @@ stateDiagram-v2
 ```
 
 Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`. Only `COMPLETED`
-documents have a downloadable output. `COMPLETED` is reachable **only** through a
-verification `PASSED` result.
+documents have a downloadable output. `COMPLETED` is reachable **only** with a
+verification `PASSED` result: either directly, or when HR approves findings-only
+review reasons on an output that already passed. A verifier `REVIEW_REQUIRED`
+result can never be approved into `COMPLETED`; HR can only deny it.
 
-Batch states: `OPEN` (accepting uploads) → `RUNNING` → `FINISHED` (all documents
-terminal or `REVIEW_REQUIRED`) → `PURGED`.
+`cancel` moves any non-terminal state except `REVIEW_REQUIRED` (which uses
+deny) to `CANCELLED`, carrying `JOB_CANCELLED`. A job may be processed at most
+3 times (`MAX_PROCESSING_ATTEMPTS`).
+
+### Review reasons
+
+| Reason | Kind | HR can |
+|---|---|---|
+| `PDF_ENCRYPTED` | blocking | Delete only |
+| `PDF_TOO_MANY_PAGES` | blocking | Delete only |
+| `PDF_NO_TEXT_LAYER` | blocking | Delete only |
+| `PDF_TEXT_UNRELIABLE` | blocking | Delete only |
+| `DOCX_ENCRYPTED` | blocking | Delete only |
+| `DOCX_TOO_LARGE_TEXT` | blocking | Delete only |
+| `DOCX_NO_TEXT` | blocking | Delete only |
+| `PDF_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
+| `DOCX_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
+| `DETECT_LOW_CONFIDENCE` | findings | Approve the verified output, or deny |
+| `MAP_AMBIGUOUS` | findings | Approve the verified output, or deny |
+| `VERIFY_REVIEW` | verifier | Deny only |
+
+A job is approvable only when **all** its reasons are hidden_content, or
+**all** are findings (with verification PASSED). Any blocking or verifier reason
+makes the job deny-only.
+
+Batch states: `OPEN` (accepting uploads; salary toggle editable) → `RUNNING`
+(toggle locked) → `FINISHED` (all documents terminal or `REVIEW_REQUIRED`).
+`PURGED` is reachable from any state.
 
 ## 3. Codes
 
 `R` = retryable: HR may re-upload the same file into the batch; `T` = re-uploading the
 same file will fail the same way. A `—` code is not an error but a review reason.
-Error codes put the document in `FAILED` (terminal), except the non-approvable review
-codes noted at the end of this section; per retention decision D-06 the
-input is deleted at that point, so a retry is always a fresh upload.
+Error codes put the document in `FAILED` (terminal); `—` rows put it in
+`REVIEW_REQUIRED` (see the review-reason table in §2). Per retention decision D-06 the
+input is deleted at a terminal state, so a retry is always a fresh upload.
 
 ### Upload (Stage 5)
 
@@ -87,10 +119,10 @@ validation reasons.
 |---|---|---|
 | `PDF_MALFORMED` | T | Cannot be parsed. |
 | `PDF_NO_PAGES` | T | Zero pages. |
-| `PDF_ENCRYPTED` | T | Password-protected or encrypted. |
-| `PDF_TOO_MANY_PAGES` | T | Exceeds page limit. |
-| `PDF_NO_TEXT_LAYER` | T | At least one page is image-only. |
-| `PDF_TEXT_UNRELIABLE` | T | Text cannot be reliably mapped to Unicode. |
+| `PDF_ENCRYPTED` | — | Password-protected or encrypted (blocking review). |
+| `PDF_TOO_MANY_PAGES` | — | Exceeds page limit (blocking review). |
+| `PDF_NO_TEXT_LAYER` | — | At least one page is image-only (blocking review). |
+| `PDF_TEXT_UNRELIABLE` | — | Text cannot be reliably mapped to Unicode (blocking review). |
 | `PDF_HIDDEN_CONTENT` | — | Hidden content found; awaiting HR approve/deny. |
 | `PDF_RESOURCE_LIMIT` | T | Decompression or object-count limits exceeded. |
 
@@ -99,11 +131,11 @@ validation reasons.
 | Code | R/T | Meaning |
 |---|---|---|
 | `DOCX_MALFORMED` | T | Archive or XML cannot be parsed, or XML uses forbidden features (DTD, entities). |
-| `DOCX_ENCRYPTED` | T | Password-protected (OLE compound container). |
+| `DOCX_ENCRYPTED` | — | Password-protected (OLE compound container; blocking review). |
 | `DOCX_UNSAFE_ARCHIVE` | T | Unsafe or duplicate entry names. |
 | `DOCX_RESOURCE_LIMIT` | T | Entry count, uncompressed size, or compression ratio exceeded. |
-| `DOCX_TOO_LARGE_TEXT` | T | Extracted text exceeds the length limit. |
-| `DOCX_NO_TEXT` | T | No extractable text. |
+| `DOCX_TOO_LARGE_TEXT` | — | Extracted text exceeds the length limit (blocking review). |
+| `DOCX_NO_TEXT` | — | No extractable text (blocking review). |
 | `DOCX_HIDDEN_CONTENT` | — | Hidden content found; awaiting HR approve/deny. |
 
 ### Detection and mapping (Stages 7–9)
@@ -143,7 +175,8 @@ Codes are shared by PDF and DOCX; the job's format says which verifier ran.
 |---|---|---|
 | `JOB_TIMEOUT` | R | Processing exceeded the time limit. |
 | `JOB_CANCELLED` | T | Cancelled by HR. |
-| `JOB_INTERRUPTED` | R | App stopped during processing; recovered on restart. |
+| `JOB_INTERRUPTED` | R | App stopped during processing and the 3-attempt limit was reached. |
+| `JOB_EXPIRED` | T | Still in review 24 h after upload; input deleted. |
 | `STORAGE_WRITE_FAILED` | R | Local write failed (disk full, permissions). |
 | `STORAGE_PATH_REJECTED` | T | Path containment check failed. |
 | `STORAGE_INTEGRITY_FAILED` | T | Stored file hash does not match. |
@@ -158,7 +191,19 @@ Exception to D-06: automatic, bounded retries inside the worker (Stage 12, e.g.
 the retained input. Each attempt deletes any partial output first and produces a new
 output id.
 
-Note on `PDF_ENCRYPTED`, `PDF_TOO_MANY_PAGES`, `PDF_NO_TEXT_LAYER`, `PDF_TEXT_UNRELIABLE`,
-`DOCX_ENCRYPTED`, `DOCX_TOO_LARGE_TEXT`, `DOCX_NO_TEXT`:
-these put the document in non-approvable `REVIEW_REQUIRED` (see supported-pdf.md §3)
-so HR sees the reason; the only action is delete.
+Blocking review reasons (`PDF_ENCRYPTED`, `PDF_TOO_MANY_PAGES`, `PDF_NO_TEXT_LAYER`,
+`PDF_TEXT_UNRELIABLE`, `DOCX_ENCRYPTED`, `DOCX_TOO_LARGE_TEXT`, `DOCX_NO_TEXT`) put the
+document in non-approvable `REVIEW_REQUIRED` (see supported-pdf.md §3) so HR sees
+the reason; the only action is delete.
+
+Stage restrictions enforced by the domain: an upload rejection accepts only
+`UPLOAD_*`, `DOCX_MACRO_OR_TEMPLATE`, `STORAGE_*`, and `INTERNAL_ERROR`. `fail` accepts,
+besides `JOB_TIMEOUT`:
+- during validation: validation codes, `STORAGE_*`, and `INTERNAL_ERROR`;
+- during processing: `DETECT_*`, `MAP_*`, `REDACT_*`, `STORAGE_*`, and `INTERNAL_ERROR`;
+- during verification: `STORAGE_*` and `INTERNAL_ERROR` (verifier findings arrive as
+  `VERIFY_*` codes in a FAILED verification result).
+
+`SECURITY_*` codes are request-level only and never become a document's code. `PDF_*`
+codes cannot apply to a DOCX job and vice versa, nor can
+`VERIFY_PAGE_COUNT_MISMATCH` (PDF only) or `VERIFY_STRUCTURE_MISMATCH` (DOCX only).
