@@ -30,7 +30,7 @@ def test_binds_loopback_even_with_a_hostile_environment(
         monkeypatch.setenv(name, "0.0.0.0")  # noqa: S104 - asserting it is ignored
     entrypoint.main([])
     ((args, kwargs),) = recorder.calls
-    assert args == ("cv_masking.api.app:create_app",)
+    assert args == ("cv_masking.api.app:create_runtime_app",)
     assert kwargs["host"] == "127.0.0.1"
     assert kwargs["port"] == 8765
     assert kwargs["proxy_headers"] is False

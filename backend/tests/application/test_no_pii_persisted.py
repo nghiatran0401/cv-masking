@@ -46,6 +46,13 @@ ALLOWED_WORDS = (
         "stored",
         "deleted",
         "object",
+        "uploaded",
+        "upload",
+        "refused",
+        "format",
+        "bytes",
+        "pdf",
+        "docx",
     }
     | {state.value for state in DocumentState}
     | {state.value for state in BatchState}

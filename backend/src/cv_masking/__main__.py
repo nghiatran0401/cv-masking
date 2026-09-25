@@ -9,7 +9,7 @@ import uvicorn
 
 from cv_masking.config import load_settings
 
-APP_FACTORY: Final = "cv_masking.api.app:create_app"
+APP_FACTORY: Final = "cv_masking.api.app:create_runtime_app"
 PACKAGE_DIR: Final = Path(__file__).resolve().parent
 
 

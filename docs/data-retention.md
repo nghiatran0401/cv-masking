@@ -55,7 +55,7 @@ File layout (Stages 3 and 4):
   .metadata_never_index              0600 marker: ask Spotlight not to index
   inputs/<uuid4>.pdf|.docx           0400 uploaded copies
   outputs/<uuid4>.pdf|.docx          0400 masked outputs
-  work/<uuid4>/                      0700 one directory per processing attempt
+  work/<uuid4>/                      0700 one directory per upload or processing attempt
   metadata/                          0700 never swept
     jobs.sqlite3 (+ -wal, -shm)      0600 job metadata (no document content)
 ```
@@ -119,7 +119,7 @@ by file permissions (A-2, A-3).
 | Data | Where | Deleted when (whichever first) |
 |---|---|---|
 | Uploaded input copy | data/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); or HR deletes the document/batch. A document in `REVIEW_REQUIRED` keeps its input until HR decides. |
-| Work/intermediate files | data/work | End of each processing attempt (success or failure). |
+| Work/intermediate files | data/work | End of each upload identification or processing attempt (success or failure). |
 | Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
 | ZIP export | data/exports (later stage) | Streamed download finishes, or 1 h after creation. |
 | CSV report (metadata only) | Generated on demand, not stored | — |

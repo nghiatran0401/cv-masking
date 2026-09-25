@@ -3,10 +3,12 @@ import pytest
 from cv_masking.config import (
     DEFAULT_PORT,
     LOOPBACK_HOST,
+    MAX_FILE_ENV_VAR,
     PORT_ENV_VAR,
     ConfigError,
     load_settings,
 )
+from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
 
 
 def test_host_is_loopback_and_cannot_be_overridden_by_environment() -> None:
@@ -19,6 +21,13 @@ def test_host_is_loopback_and_cannot_be_overridden_by_environment() -> None:
 def test_port_defaults_and_can_be_set() -> None:
     assert load_settings({}).port == DEFAULT_PORT == 8765
     assert load_settings({PORT_ENV_VAR: "9000"}).port == 9000
+
+
+def test_file_limit_cannot_exceed_the_hard_cap() -> None:
+    assert load_settings({}).max_file_bytes == HARD_MAX_FILE_BYTES
+    assert load_settings({MAX_FILE_ENV_VAR: "1024"}).max_file_bytes == 1024
+    with pytest.raises(ConfigError):
+        load_settings({MAX_FILE_ENV_VAR: str(HARD_MAX_FILE_BYTES + 1)})
 
 
 def test_invalid_ports_are_rejected() -> None:

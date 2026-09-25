@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from service_helpers import ManualClock
 
 from cv_masking.adapters.local_storage import (
@@ -13,7 +14,10 @@ from cv_masking.adapters.local_storage import (
     StorageRoot,
 )
 from cv_masking.adapters.sqlite import SqliteMetadataStore
-from cv_masking.application import JobService
+from cv_masking.api.app import create_app
+from cv_masking.api.runtime import Runtime, limits_from_settings
+from cv_masking.application import JobService, UploadService
+from cv_masking.config import Settings
 
 
 @pytest.fixture
@@ -80,3 +84,29 @@ def service(
     clock: ManualClock,
 ) -> JobService:
     return JobService(store, input_store, output_store, clock)
+
+
+@pytest.fixture
+def settings() -> Settings:
+    return Settings()
+
+
+@pytest.fixture
+def uploads(
+    service: JobService,
+    input_store: LocalInputStore,
+    work_area: LocalWorkArea,
+    clock: ManualClock,
+    settings: Settings,
+) -> UploadService:
+    return UploadService(service, input_store, work_area, clock, limits_from_settings(settings))
+
+
+@pytest.fixture
+def runtime(service: JobService, uploads: UploadService, settings: Settings) -> Runtime:
+    return Runtime(service, uploads, settings)
+
+
+@pytest.fixture
+def client(runtime: Runtime) -> TestClient:
+    return TestClient(create_app(runtime))
