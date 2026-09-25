@@ -239,11 +239,9 @@ The kept tests cover:
 
 ## Questions/decisions for the tech lead
 
-1. **Requeue after FINISHED.** When HR approves a hidden-content review in a FINISHED batch,
-   should the batch go back to RUNNING? The alternative is that the document is processed
-   without the batch changing state. This is needed by Stage 12.
-2. **The trimmed suite.** Please confirm that the smaller suite is acceptable for the PoC.
-   Removed cases can be restored from git history if a later stage needs them.
+1. **Requeue after FINISHED.** Answered after the commit (D-27): the batch returns to RUNNING
+   and finishes again once the requeued document is settled. Stage 12 implements it.
+2. **The trimmed suite.** Confirmed as good enough for the PoC.
 
 ## Suggested commit message
 

@@ -93,6 +93,7 @@ laptop and produces permanently redacted copies.
 | D-24 | Quitting the app does not erase inputs, outputs, or metadata (answers Q-07). | Tech lead, Stage 3 follow-up |
 | D-25 | Purging a batch deletes its files and then every metadata row about it (batch, documents, hashes, counts, codes); nothing is kept as a tombstone. Job metadata lives in `data/metadata/jobs.sqlite3`. | Tech lead, Stage 4 |
 | D-26 | File/metadata reconciliation (remove files no document needs, and unreferenced files older than 1 h) is built in Stage 4 as a service call; Stage 12 schedules it. | Tech lead, Stage 4 |
+| D-27 | If HR approves a hidden-content review in a FINISHED batch, the batch returns to RUNNING and finishes again once that document is settled. Implemented in Stage 12. | Tech lead, after Stage 4 |
 
 ## 6. Known gaps between approved scope and the stage plan
 
