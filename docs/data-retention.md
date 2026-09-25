@@ -1,7 +1,7 @@
 # Privacy assumptions, local retention, and cleanup
 
-Status: Stage 0 baseline. Storage is implemented in Stage 3, metadata in Stage 4,
-recovery in Stage 12, shutdown in Stage 15.
+Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implemented in
+Stage 3. Metadata follows in Stage 4, recovery in Stage 12, shutdown in Stage 15.
 
 ## 1. Privacy assumptions
 
@@ -45,25 +45,61 @@ All runtime data lives **outside the repository** under a per-user application r
 | macOS | `~/Library/Application Support/CVMasking/` (metadata) and `~/Library/Caches/CVMasking/` (files) |
 | Windows | Future stage (D-08); expected `%LOCALAPPDATA%\CVMasking\` |
 
+File layout (Stage 3):
+
+```text
+~/Library/Caches/CVMasking/          0700, owned by the HR user
+  .cv-masking-cache                  0600 marker: this directory belongs to the app
+  .metadata_never_index              0600 marker: ask Spotlight not to index
+  inputs/<uuid4>.pdf|.docx           0400 uploaded copies
+  outputs/<uuid4>.pdf|.docx          0400 masked outputs
+  work/<uuid4>/                      0700 one directory per processing attempt
+```
+
 Rules:
-- Directories are created owner-only (`0700`).
+- Directories are owner-only (`0700`); stored objects are read-only to the owner (`0400`).
 - Every server-side path is `<root>/<kind>/<random-uuid>[.pdf|.docx]`, with the extension
   taken from the validated format. Original filenames are never
-  used in any path, database row, log line, or report.
-- All path resolution is containment-checked against the root; symlinks are refused.
-- Writes are atomic (temp file in the same directory, fsync, rename). A partial file is never
-  visible under a final name.
-- Exclusion from OS indexing and backups (Spotlight, Time Machine) is
-  investigated and documented in Stage 3; it is not assumed.
+  used in any path, database row, log line, or report. The input and output of a
+  document use different random identifiers.
+- **Dedicated root.** The root must be an absolute path outside any git checkout. An
+  existing non-empty directory without the `.cv-masking-cache` marker is refused (the app
+  never adopts, sweeps, or deletes a directory it did not create). A root owned by another
+  user, or a symlink, is refused. A root owned by the user with looser permissions is
+  tightened to `0700` and a warning is logged.
+- **No path traversal or symlinks.** Every file operation is relative to an already-opened
+  directory descriptor with `O_NOFOLLOW`. Names are generated internally and checked against
+  a strict pattern. An opened object must be a regular file, owned by the user, with a
+  single link and no group/other permissions; otherwise it is refused.
+- **Atomic, non-overwriting writes.** Data goes to a hidden `.<random>.part` temp file in
+  the same directory, which is size-limited while streaming, hashed, fsynced, made
+  read-only, then hard-linked to its final name (a link never replaces an existing file),
+  and the directory is fsynced. A partial file is never visible under a final name, and
+  no input or output is ever overwritten.
+- **Time Machine.** `~/Library/Caches` is in Time Machine's standard exclusions. This was
+  confirmed on the development Mac (macOS 26) with `tmutil isexcluded ~/Library/Caches`
+  → `[Excluded]`. The app does not set its own exclusion, because that would require a
+  subprocess (`tmutil`) or native calls. Bank backup agents may ignore this (A-3).
+- **Spotlight.** The app writes a `.metadata_never_index` marker in the root. Apple
+  documents this marker for volumes; its effect on a folder is best-effort and must be
+  checked on the bank image. Stored files have no filename metadata beyond a UUID.
+
+Manual checks on a bank laptop (after the app has created the root):
+
+```bash
+tmutil isexcluded ~/Library/Caches/CVMasking      # expect [Excluded]
+ls -la ~/Library/Caches/CVMasking                  # expect drwx------ and both markers
+mdfind -onlyin ~/Library/Caches/CVMasking 'kMDItemFSName == "*"'   # expect no results
+```
 
 ## 4. Retention schedule
 
 | Data | Where | Deleted when (whichever first) |
 |---|---|---|
-| Uploaded input copy | files/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); HR deletes the document/batch; **24 h** after upload (a document still in `REVIEW_REQUIRED` at 24 h becomes `FAILED`/expired and its input is deleted). |
-| Work/intermediate files | files/work | End of each processing attempt (success or failure). |
-| Masked output | files/outputs | HR clears it; **24 h** after the document completed. |
-| ZIP export | files/exports | Streamed download finishes, or 1 h after creation. |
+| Uploaded input copy | Caches/CVMasking/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); HR deletes the document/batch; **24 h** after upload (a document still in `REVIEW_REQUIRED` at 24 h becomes `FAILED`/expired and its input is deleted). |
+| Work/intermediate files | Caches/CVMasking/work | End of each processing attempt (success or failure). |
+| Masked output | Caches/CVMasking/outputs | HR clears it; **24 h** after the document completed. |
+| ZIP export | Caches/CVMasking/exports (later stage) | Streamed download finishes, or 1 h after creation. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | Application Support / LOCALAPPDATA | Batch is purged (all its documents purged). No long-term audit trail (D-11). |
 | Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |
@@ -78,7 +114,19 @@ The 24 h windows are hard maximums; they are not extended by activity.
    that cannot be skipped by exceptions; cleanup failure is logged by code and retried by the sweeper.
 2. **Terminal state:** input copy deleted immediately.
 3. **Periodic sweeper:** every 10 minutes while running, purges anything past §4 windows and
-   any orphan file with no matching metadata row.
+   any orphan file with no matching metadata row. The file-age part exists since Stage 3
+   (the schedule and metadata reconciliation come in Stages 4 and 12). It looks only inside
+   `inputs/`, `outputs/` and `work/`, never follows symlinks, and removes by file age:
+
+   | Entry | Removed after |
+   |---|---|
+   | `inputs/` or `outputs/` object (`<uuid4>.pdf/.docx`) | 24 h, even with no metadata |
+   | Temp file (`.<hex>.part`) | 1 h |
+   | Work directory (`work/<uuid4>`) | 1 h |
+   | Anything else (unexpected names, symlinks, stray directories) | 1 h |
+
+   Timestamps in the future are left alone. Each run logs only counts; a failure
+   to remove an entry is counted and retried on the next run.
 4. **Startup:** runs the sweeper before accepting requests; documents found mid-processing are
    recovered per Stage 12 (bounded retry) or failed with `JOB_INTERRUPTED`.
 5. **HR "Clear all":** deletes every batch, file, and metadata row immediately.

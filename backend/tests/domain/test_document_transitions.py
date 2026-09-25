@@ -33,6 +33,7 @@ type Command = Callable[[DocumentJob], DocumentJob]
 COMMANDS: dict[str, Command] = {
     "mark_uploaded": lambda j: j.mark_uploaded(
         document_format=DocumentFormat.PDF,
+        input_ref=new_object_ref(),
         content_sha256=DIGEST,
         size_bytes=SIZE_BYTES,
         at=later(j),

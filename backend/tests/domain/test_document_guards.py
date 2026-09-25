@@ -81,9 +81,14 @@ def test_mark_uploaded_records_upload_fields() -> None:
     job = created()
     at = later(job)
     result = job.mark_uploaded(
-        document_format=DOCX, content_sha256=DIGEST, size_bytes=SIZE_BYTES, at=at
+        document_format=DOCX,
+        input_ref=new_object_ref(),
+        content_sha256=DIGEST,
+        size_bytes=SIZE_BYTES,
+        at=at,
     )
     assert result.document_format is DOCX
+    assert result.input_ref is not None
     assert result.content_sha256 == DIGEST
     assert result.size_bytes == SIZE_BYTES
     assert result.uploaded_at == at
@@ -94,14 +99,22 @@ def test_mark_uploaded_rejects_out_of_range_sizes(size: int) -> None:
     job = created()
     with pytest.raises(InvariantError):
         job.mark_uploaded(
-            document_format=PDF, content_sha256=DIGEST, size_bytes=size, at=later(job)
+            document_format=PDF,
+            input_ref=new_object_ref(),
+            content_sha256=DIGEST,
+            size_bytes=size,
+            at=later(job),
         )
 
 
 def test_mark_uploaded_accepts_the_hard_size_limit() -> None:
     job = created()
     result = job.mark_uploaded(
-        document_format=PDF, content_sha256=DIGEST, size_bytes=20 * 1024 * 1024, at=later(job)
+        document_format=PDF,
+        input_ref=new_object_ref(),
+        content_sha256=DIGEST,
+        size_bytes=20 * 1024 * 1024,
+        at=later(job),
     )
     assert result.size_bytes == 20 * 1024 * 1024
 

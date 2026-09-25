@@ -65,6 +65,8 @@ INVALID: dict[str, Case] = {
         {"state": S.CREATED},
     ),
     "partial-upload": (uploaded, {"content_sha256": None}),
+    "upload-without-input-ref": (uploaded, {"input_ref": None}),
+    "raw-uuid-input-ref": (uploaded, {"input_ref": uuid4()}),
     "zero-size": (uploaded, {"size_bytes": 0}),
     "oversize": (uploaded, {"size_bytes": 20 * 1024 * 1024 + 1}),
     "uploaded-after-updated": (
@@ -132,6 +134,12 @@ def test_impossible_stored_job_is_rejected(name: str) -> None:
     job = build()
     with pytest.raises(InvariantError):
         rebuild(job, **changes)
+
+
+def test_output_cannot_reuse_the_input_ref() -> None:
+    job = verifying()
+    with pytest.raises(InvariantError):
+        rebuild(job, output_ref=job.input_ref)
 
 
 def test_completed_with_failed_verification_is_rejected() -> None:

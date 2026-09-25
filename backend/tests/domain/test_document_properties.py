@@ -68,7 +68,11 @@ def _apply(job: DocumentJob, op: Op) -> DocumentJob:
     if name == "mark_uploaded":
         assert isinstance(arg, DocumentFormat)
         return job.mark_uploaded(
-            document_format=arg, content_sha256=DIGEST, size_bytes=SIZE_BYTES, at=at
+            document_format=arg,
+            input_ref=new_object_ref(),
+            content_sha256=DIGEST,
+            size_bytes=SIZE_BYTES,
+            at=at,
         )
     if name in {"reject_upload", "fail"}:
         assert isinstance(arg, ErrorCode)

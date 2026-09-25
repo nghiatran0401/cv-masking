@@ -77,7 +77,11 @@ def created() -> DocumentJob:
 def uploaded(fmt: DocumentFormat = DocumentFormat.PDF) -> DocumentJob:
     job = created()
     return job.mark_uploaded(
-        document_format=fmt, content_sha256=DIGEST, size_bytes=SIZE_BYTES, at=later(job)
+        document_format=fmt,
+        input_ref=new_object_ref(),
+        content_sha256=DIGEST,
+        size_bytes=SIZE_BYTES,
+        at=later(job),
     )
 
 

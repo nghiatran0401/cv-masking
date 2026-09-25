@@ -113,6 +113,7 @@ class DocumentJob:
     updated_at: datetime
     version: int
     document_format: DocumentFormat | None = None
+    input_ref: ObjectRef | None = None
     content_sha256: Sha256Digest | None = None
     size_bytes: int | None = None
     uploaded_at: datetime | None = None
@@ -156,6 +157,7 @@ class DocumentJob:
         self,
         *,
         document_format: DocumentFormat,
+        input_ref: ObjectRef,
         content_sha256: Sha256Digest,
         size_bytes: int,
         at: datetime,
@@ -165,6 +167,7 @@ class DocumentJob:
             at,
             state=DocumentState.UPLOADED,
             document_format=document_format,
+            input_ref=input_ref,
             content_sha256=content_sha256,
             size_bytes=size_bytes,
             uploaded_at=at,
@@ -383,6 +386,7 @@ class DocumentJob:
             (self.batch_id, BatchId, "batch_id"),
             (self.state, DocumentState, "state"),
             (self.document_format, (DocumentFormat, type(None)), "document_format"),
+            (self.input_ref, (ObjectRef, type(None)), "input_ref"),
             (self.content_sha256, (Sha256Digest, type(None)), "content_sha256"),
             (self.policy, (MaskingPolicy, type(None)), "policy"),
             (self.output_ref, (ObjectRef, type(None)), "output_ref"),
@@ -409,6 +413,7 @@ class DocumentJob:
     def _check_upload_fields(self) -> None:
         upload_fields = (
             self.document_format,
+            self.input_ref,
             self.content_sha256,
             self.size_bytes,
             self.uploaded_at,
@@ -444,6 +449,8 @@ class DocumentJob:
             self.output_ref is None or self.finding_counts is None or self.verification is not None
         ):
             raise InvariantError("a VERIFYING DocumentJob needs an output and no verification")
+        if self.output_ref is not None and self.output_ref == self.input_ref:
+            raise InvariantError("DocumentJob.output_ref must differ from input_ref")
         if self.verification is not None and self.verification.output_ref != self.output_ref:
             raise InvariantError("DocumentJob.verification does not match output_ref")
         if self.hidden_content_approved and self.state in _STATES_BEFORE_APPROVAL:

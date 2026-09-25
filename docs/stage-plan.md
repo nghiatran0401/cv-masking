@@ -13,7 +13,7 @@ then handoff, then **git commit** (D-18).
 | 0 | Governance and threat model | Complete (committed) |
 | 1 | Repository and quality gates | Complete (committed) |
 | 2 | Domain model and state machine | Complete (committed) |
-| 3 | Local storage and cleanup | Not started |
+| 3 | Local storage and cleanup | Complete (committed) |
 | 4 | SQLite metadata | Not started |
 | 5 | Batch upload API | Not started |
 | 6 | PDF validation and extraction | Not started |

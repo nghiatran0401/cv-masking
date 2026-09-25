@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import fields, is_dataclass
 
 import pytest
-from domain_builders import created, later, uploaded, validating
+from domain_builders import created, later, new_object_ref, uploaded, validating
 
 from cv_masking.domain.batch import Batch
 from cv_masking.domain.document_job import DocumentJob
@@ -66,6 +66,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "updated_at",
         "version",
         "document_format",
+        "input_ref",
         "content_sha256",
         "size_bytes",
         "uploaded_at",
@@ -170,6 +171,7 @@ def _attempts() -> list[Callable[[], object]]:
         lambda: job.start_validation(MARKER),  # type: ignore[arg-type]
         lambda: new.mark_uploaded(
             document_format=MARKER,  # type: ignore[arg-type]
+            input_ref=new_object_ref(),
             content_sha256=MARKER,  # type: ignore[arg-type]
             size_bytes=1,
             at=later(new),
