@@ -1,0 +1,118 @@
+# cv-masking .cursorignore
+# Purpose: stop Cursor from indexing or reading anything that could contain real
+# candidate data. This is a best-effort guard, NOT a security boundary:
+# anything pasted into chat, attached, or opened by hand still leaves the machine
+# for model inference. See SECURITY.md "Developer environment".
+#
+# Keep in sync with .gitignore. Only synthetic fixtures (filename starts with "synthetic-")
+# inside tests/fixtures/synthetic/ are re-included.
+
+# Runtime data directories
+data/
+runtime/
+uploads/
+upload/
+inputs/
+input/
+outputs/
+output/
+work/
+tmp/
+temp/
+cache/
+quarantine/
+exports/
+reports/
+downloads/
+.cv-masking/
+CVMasking/
+
+# Documents, images, archives
+*.pdf
+*.PDF
+*.doc
+*.DOC
+*.docx
+*.DOCX
+*.docm
+*.dot
+*.dotx
+*.odt
+*.rtf
+*.pages
+*.png
+*.PNG
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.heic
+*.HEIC
+*.webp
+*.zip
+*.ZIP
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# Databases, reports, logs, dumps
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.csv
+*.CSV
+*.xlsx
+*.xls
+*.log
+logs/
+*.dump
+*.core
+core.*
+*.heapsnapshot
+*.prof
+*.trace
+coverage/
+htmlcov/
+playwright-report/
+test-results/
+blob-report/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.token
+
+# Heavy or generated trees (no value to the agent, may embed copied data)
+node_modules/
+.venv/
+venv/
+dist/
+build/
+.hypothesis/
+
+# OS junk
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Synthetic fixtures — re-included so the agent can work with tests.
+!**/tests/fixtures/synthetic/
+!**/tests/fixtures/synthetic/**/
+!**/tests/fixtures/synthetic/**/synthetic-*
