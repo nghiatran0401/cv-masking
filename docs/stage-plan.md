@@ -162,6 +162,10 @@ Acceptance: Mapping tests cover fragmented entities and duplicate occurrences; u
 
 Stage 0 notes: PDF-only. DOCX findings map to part + character range through the run mapping produced in Stage 6b, which Stage 10b consumes.
 
+Stage 8 decisions (approved):
+- **Overlaps.** Detection keeps partially overlapping findings of different types as separate findings. Stage 9 merges overlapping boxes into one redaction region whose label is the higher-priority type (masking-policy.md §5).
+- **Unmappable findings.** A finding that maps to no source box sets `MAP_FAILED`: the document fails, and nothing is approvable. A finding with several candidate box sets redacts all of them and sets `MAP_AMBIGUOUS` (review). This replaces the interim Stage 8 behaviour, where a PDF match with no overlapping word box sets `MAP_AMBIGUOUS`.
+
 ## Stage 10 — Permanent redaction
 Goal: Create secure masked PDFs.
 
@@ -172,6 +176,8 @@ Execute Stage 10 only. Implement PdfRedactor using mapped boxes and PyMuPDF reda
 Acceptance: Visual overlay alone is impossible in implementation; source hash is unchanged; redacted strings are absent after reopening; document remains renderable.
 
 Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of approved hidden content. Embedded images are kept unchanged (D-13); a test must prove an image outside redaction boxes survives.
+
+Stage 8 decision (approved): draw one redaction and one label per merged Stage 9 region, never one per overlapping finding, so labels cannot overlap.
 
 ## Stage 10b — DOCX redaction
 Goal: Create secure masked DOCX files.

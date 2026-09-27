@@ -70,7 +70,7 @@ class DetectionService:
         if any(item.requires_review for item in findings):
             review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
         if not any(item.entity_type is EntityType.CANDIDATE_NAME for item in findings):
-            review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
+            review.add(ReviewReason.DETECT_NO_CANDIDATE_NAME)
         if any(finding is None for _, finding in located):
             review.add(ReviewReason.MAP_AMBIGUOUS)
         logger.info(

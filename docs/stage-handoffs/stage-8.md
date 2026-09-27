@@ -42,9 +42,10 @@ into `start_batch` (Stage 12 does that).
 - **Uncertain cases fail to review.**
   - A header name without font-size or email corroboration scores 0.60–0.70,
     which puts it in the review band.
-  - `DetectionService` adds `DETECT_LOW_CONFIDENCE` when no `CANDIDATE_NAME`
-    finding exists, because every CV names its candidate. See the questions for
-    the tech lead.
+  - `DetectionService` adds `DETECT_NO_CANDIDATE_NAME` (a findings-kind review
+    reason) when no `CANDIDATE_NAME` finding exists, because every CV names its
+    candidate. It is separate from `DETECT_LOW_CONFIDENCE` so the reviewer
+    knows to check the header, and so Stage 16 can measure how often it fires.
 - **Family (`context.py`).** The whole content block after a family heading, up
   to the next heading, is one `FAMILY_DETAILS` hit (0.90, `section_heading`).
   Stage 7 hits fully inside the block are absorbed.
@@ -84,8 +85,10 @@ Changed:
 - `backend/src/cv_masking/adapters/detection/normalize.py`: "đ" folding; `Sequence` mapping
 - `backend/src/cv_masking/ports/detection.py`: `signals`, `SIGNALS`, `PROVENANCE_REQUIRED`
 - `backend/src/cv_masking/application/detection.py`: review when no candidate name or unmappable PDF match
+- `backend/src/cv_masking/domain/codes.py`: `ReviewReason.DETECT_NO_CANDIDATE_NAME` (findings kind)
 - `backend/tests/application/test_detect.py`: deterministic low-confidence test
-- Docs: `README.md`, `docs/stage-plan.md`
+- Docs: `README.md`, `docs/error-codes.md` (new review reason), `docs/stage-plan.md`
+  (status; approved Stage 9/10 notes on overlaps and unmappable findings)
 
 ## Commands run and exact results
 
@@ -134,7 +137,8 @@ Forty new backend tests (223 → 263), all in `test_names.py`:
   - the same address after a heading is ignored;
   - a weak address goes to review;
   - a city alone is not an address.
-- **Review triggers:** no candidate name, or a PDF match without boxes.
+- **Review triggers:** no candidate name (`DETECT_NO_CANDIDATE_NAME` only),
+  or a PDF match without boxes (`MAP_AMBIGUOUS`).
 - **Provenance invariant:** each heuristic type without signals raises; an
   unknown signal raises.
 - **Bilingual corpus:** exact span precision and recall of 1.0 for the name,
@@ -190,15 +194,19 @@ Forty new backend tests (223 → 263), all in `test_names.py`:
 
 ## Questions/decisions for the tech lead
 
-1. **No candidate name means review.** A document with no `CANDIDATE_NAME`
-   finding gets `DETECT_LOW_CONFIDENCE`. This fails closed, but it will send
-   some legitimate CVs to review. Keep it, or narrow it later with evaluation
-   data?
-2. **Partial cross-type overlaps are now both kept** (previously the lower
-   priority was dropped). This matches the §5 union rule. Confirm that the
-   Stage 10 redactor redacts the union of overlapping findings.
-3. **MAP_AMBIGUOUS for unmappable PDF matches** is raised early here instead of
-   waiting for Stage 9. Is that acceptable?
+Resolved after review:
+
+1. **No candidate name means review.** Kept, under its own reason,
+   `DETECT_NO_CANDIDATE_NAME`. Revisit its frequency with Stage 16 evaluation
+   data before relaxing it.
+2. **Partial cross-type overlaps are both kept** by detection. Stage 9 merges
+   overlapping boxes into one region labelled with the higher-priority type;
+   Stage 10 draws one redaction and one label per region. Recorded in
+   `docs/stage-plan.md`.
+3. **Unmappable PDF matches.** Kept as `MAP_AMBIGUOUS` for now, because
+   detection is not wired to the worker. Stage 9 will switch to `MAP_FAILED`
+   when a finding maps to no box, and `MAP_AMBIGUOUS` (redact all candidates)
+   when several box sets are possible. Recorded in `docs/stage-plan.md`.
 
 ## Suggested commit message
 

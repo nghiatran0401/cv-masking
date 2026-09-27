@@ -75,6 +75,7 @@ deny) to `CANCELLED`, carrying `JOB_CANCELLED`. A job may be processed at most
 | `PDF_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
 | `DOCX_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
 | `DETECT_LOW_CONFIDENCE` | findings | Approve the verified output, or deny |
+| `DETECT_NO_CANDIDATE_NAME` | findings | Check that the candidate's name is masked; approve the verified output, or deny |
 | `MAP_AMBIGUOUS` | findings | Approve the verified output, or deny |
 | `VERIFY_REVIEW` | verifier | Deny only |
 
@@ -142,6 +143,7 @@ validation reasons.
 | Code | R/T | Meaning |
 |---|---|---|
 | `DETECT_LOW_CONFIDENCE` | — | One or more findings require review. |
+| `DETECT_NO_CANDIDATE_NAME` | — | No candidate name was detected; the name may be unmasked, review required. |
 | `DETECT_FAILED` | R | A detector raised an error. |
 | `MAP_AMBIGUOUS` | — | A finding could not be mapped to boxes unambiguously; review required. |
 | `MAP_FAILED` | R | Mapping raised an error. |

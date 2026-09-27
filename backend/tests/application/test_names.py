@@ -89,7 +89,7 @@ def test_labeled_vietnamese_name_is_exact_and_confident(service: DetectionServic
     assert name.detector_id == "name.label"
     assert name.signals == ("label",)
     assert _spans(outcome, EntityType.POSTAL_ADDRESS) == {span_of(text, "12 Phố Mẫu")}
-    assert ReviewReason.DETECT_LOW_CONFIDENCE not in outcome.review
+    assert outcome.review == frozenset()
 
 
 def test_labeled_english_name_stops_at_separator(service: DetectionService) -> None:
@@ -204,7 +204,7 @@ _CONFOUNDERS = (
 def test_confounder_header_is_not_a_name(service: DetectionService, index: int) -> None:
     outcome = _run(service, docx(_CONFOUNDERS[index], f"Email: {UNRELATED_EMAIL}"))
     assert not _spans(outcome, EntityType.CANDIDATE_NAME), f"confounder {index}"
-    assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
+    assert ReviewReason.DETECT_NO_CANDIDATE_NAME in outcome.review
 
 
 def test_company_and_education_lines_after_headings_are_not_names(
@@ -321,7 +321,7 @@ def test_weak_contact_block_address_requires_review(service: DetectionService) -
     outcome = _run(service, docx(f"Họ và tên: {VN_NAME}", "Quận Mẫu, Thành phố Thử"))
     found = _only(outcome, EntityType.POSTAL_ADDRESS)
     assert found.confidence < REDACT_THRESHOLD
-    assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
+    assert outcome.review == frozenset({ReviewReason.DETECT_LOW_CONFIDENCE})
 
 
 def test_city_alone_is_not_an_address(service: DetectionService) -> None:
@@ -332,7 +332,7 @@ def test_city_alone_is_not_an_address(service: DetectionService) -> None:
 def test_document_without_candidate_name_requires_review(service: DetectionService) -> None:
     outcome = _run(service, docx(f"Email: {UNRELATED_EMAIL}", "Skills", "Python"))
     assert not _spans(outcome, EntityType.CANDIDATE_NAME)
-    assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
+    assert outcome.review == frozenset({ReviewReason.DETECT_NO_CANDIDATE_NAME})
 
 
 def test_pdf_match_without_boxes_requires_review(service: DetectionService) -> None:
