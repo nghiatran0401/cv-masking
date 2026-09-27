@@ -212,7 +212,9 @@ Goal: Prevent unverified DOCX outputs from being released.
 Execute Stage 11b only. Extend the independent verifier to DOCX: reopen the output with a fresh handle, validate archive limits and XML well-formedness, search every decompressed part for normalized source findings, rerun deterministic mandatory detectors on freshly extracted text, and confirm that no always-strip item or hidden-content category remains and no expected part is missing. Return PASSED, REVIEW_REQUIRED, or FAILED with safe codes. It must not trust redactor state or mock redaction in production. Add tampered-output and residual-PII tests, including residue in fallback copies, document properties, comments, field codes, and thumbnails.
 ```
 
-Acceptance: Only verification PASSED may transition a DOCX job to COMPLETED; residual data in any part is caught; the verifier uses a fresh parser/file handle; the limitation that rendering in Microsoft Word is not verified is documented.
+Decision D-36 (after Stage 10b): the verifier also fails the output with `VERIFY_RESIDUAL_METADATA` when a style in `styles.xml` sets `w:vanish`/`w:specVanish` and the document uses that style.
+
+Acceptance: Only verification PASSED may transition a DOCX job to COMPLETED; residual data in any part is caught; a used style that hides text fails verification (D-36); the verifier uses a fresh parser/file handle; the limitation that rendering in Microsoft Word is not verified is documented.
 
 ## Stage 12 — Local job queue
 Goal: Process large batches without freezing the laptop.

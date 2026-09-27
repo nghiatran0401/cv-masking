@@ -224,9 +224,10 @@ the label's run formatting.
 
 ## Questions/decisions for the tech lead
 
-- Should DOCX text inside legacy `w:object` shapes fail closed (current
-  behaviour) or be supported later?
-- Should style-based hidden text be detected in Stage 11b verification?
+Resolved after review:
+
+- **D-35:** findings inside legacy `w:object` content keep failing closed.
+- **D-36:** Stage 11b fails outputs that use a style which hides text.
 
 ## Suggested commit message
 

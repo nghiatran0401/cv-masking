@@ -142,7 +142,7 @@ and the displayed result of fields.
 |---|---|
 | Tracked changes (`w:ins`, `w:del`, moves, formatting changes) | All changes are accepted: deleted text is dropped, inserted text is kept and scanned. |
 | Comments (`comments*.xml` and anchors) | Removed. |
-| Hidden text (`w:vanish`, `w:specVanish`) | Removed. |
+| Hidden text (`w:vanish`, `w:specVanish`) | Removed when set directly on a run. Hidden text applied through a style is scanned like visible text, and Stage 11b fails such outputs (D-36). |
 | Embedded objects and packages (`word/embeddings/*`, OLE) | Removed. |
 | Imported chunks (`altChunk`: HTML/RTF/MHT inside the DOCX) | Removed. |
 | Custom XML parts and data bindings | Removed. |
