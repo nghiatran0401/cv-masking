@@ -179,6 +179,8 @@ Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of 
 
 Stage 8 decision (approved): draw one redaction and one label per merged Stage 9 region, never one per overlapping finding, so labels cannot overlap.
 
+Stage 9 decision (approved): PyMuPDF word boxes on tightly spaced lines overlap the neighbouring line vertically by about 3.5 pt. Stage 10 must include an acceptance test that redacts a word on one line and proves the words on the lines directly above and below still extract intact; if they do not, trim the overlap from the redaction rectangles, and prove the redacted word's own glyphs are still fully removed.
+
 ## Stage 10b — DOCX redaction
 Goal: Create secure masked DOCX files.
 

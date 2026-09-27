@@ -62,9 +62,10 @@ class DetectionOutcome:
 
     @property
     def counts(self) -> FindingCounts:
+        """One per detected entity: a long match split into several findings counts once."""
         totals: dict[EntityType, int] = {}
-        for finding in self.findings:
-            totals[finding.entity_type] = totals.get(finding.entity_type, 0) + 1
+        for match in self.matches:
+            totals[match.entity_type] = totals.get(match.entity_type, 0) + 1
         return FindingCounts.from_mapping(totals)
 
 

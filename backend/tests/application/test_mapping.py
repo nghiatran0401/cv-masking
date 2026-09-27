@@ -11,7 +11,7 @@ from synthetic_mapping import EMAIL, NAME, PHONE, glued, page
 
 from cv_masking.application import DetectionOutcome, DetectionService
 from cv_masking.application.mapping import build_regions, map_span
-from cv_masking.domain.codes import ErrorCode, ReviewReason
+from cv_masking.domain.codes import ErrorCode, ReviewReason, is_retryable
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import (
     MAX_BOXES_PER_FINDING,
@@ -233,8 +233,10 @@ def test_uncovered_visible_character_fails_mapping() -> None:
     document = ExtractedDocument(page(_row(0, ("x", 0, 5))).document_format, (part,))
     outcome = _outcome(document, _match(EntityType.EMAIL, (7, len(text))))
     assert outcome.failure is ErrorCode.MAP_FAILED
+    assert not is_retryable(ErrorCode.MAP_FAILED)
     assert outcome.findings == ()
     assert outcome.regions == ()
+    assert outcome.counts.total == 0
 
 
 def test_whitespace_between_words_needs_no_box() -> None:
@@ -259,7 +261,7 @@ def test_long_findings_are_chunked() -> None:
     outcome = _outcome(document, _match(EntityType.FAMILY_DETAILS, (0, end)))
     sizes = [len(f.location.boxes) for f in outcome.findings if isinstance(f.location, PdfLocation)]
     assert sizes == [MAX_BOXES_PER_FINDING, 6]
-    assert outcome.counts.as_dict() == {EntityType.FAMILY_DETAILS: 2}
+    assert outcome.counts.as_dict() == {EntityType.FAMILY_DETAILS: 1}
 
 
 def test_same_word_findings_form_one_region_with_winning_label() -> None:

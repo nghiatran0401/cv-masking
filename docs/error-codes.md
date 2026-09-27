@@ -146,7 +146,7 @@ validation reasons.
 | `DETECT_NO_CANDIDATE_NAME` | — | No candidate name was detected; the name may be unmasked, review required. |
 | `DETECT_FAILED` | R | A detector raised an error. |
 | `MAP_AMBIGUOUS` | — | A finding's word overlaps another word drawn on top of it; all candidate boxes are redacted, review required. |
-| `MAP_FAILED` | R | Mapping raised an error, or a visible character of a finding has no source word box. |
+| `MAP_FAILED` | T | Mapping raised an error, or a visible character of a finding has no source word box. Mapping is deterministic, so re-uploading fails the same way. |
 
 ### Redaction (Stages 10, 10b)
 

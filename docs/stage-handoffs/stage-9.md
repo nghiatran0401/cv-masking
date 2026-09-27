@@ -171,7 +171,6 @@ The tests check that:
   option.
 - **Rotated or vertical text** gets one box per word, because those words are
   not on a shared horizontal line. Correct, but not merged.
-- **Chunked long findings** count as several findings in `FindingCounts`.
 - **Hyphenated words across a line break** (for example "Nguy-" / "ễn") are
   not joined, so detection does not see the name. That is a detection limit;
   mapping would place it.
@@ -188,15 +187,17 @@ The tests check that:
 
 ## Questions/decisions for the tech lead
 
-1. **Is `MAP_FAILED` retryable (`R`)?** It still is, because it also covers
-   "mapping raised an error". A finding with no source box is deterministic, so
-   re-uploading fails the same way. Keep one retryable code, or add a
-   terminal-class code such as `MAP_UNPLACEABLE` (`T`)?
-2. **Whole-word over-redaction.** Glued labels and punctuation disappear with
-   the value. Accept this for the PoC, or ask for per-character boxes (a Stage 6
-   extractor change) before Stage 10?
-3. **Chunked findings.** A finding with more than 64 boxes counts more than
-   once. Acceptable, or should counts stay one per detected entity?
+Resolved after review:
+
+1. **`MAP_FAILED` is now non-retryable (`T`).** Mapping is pure and
+   deterministic, so neither cause can succeed on re-upload. Removed from
+   `RETRYABLE_ERROR_CODES`; `docs/error-codes.md` updated.
+2. **Whole-word over-redaction.** Left open; not yet accepted or rejected.
+   Per-character boxes would be a Stage 6 extractor change.
+3. **Counts are one per detected entity.** `DetectionOutcome.counts` counts
+   matches, so a long match split into several findings counts once.
+4. **Stage 10 acceptance test** for tight line spacing is recorded in
+   `docs/stage-plan.md` under Stage 10.
 
 ## Suggested commit message
 

@@ -101,7 +101,6 @@ RETRYABLE_ERROR_CODES: Final = frozenset(
         ErrorCode.UPLOAD_MALFORMED_REQUEST,
         ErrorCode.UPLOAD_TIMEOUT,
         ErrorCode.DETECT_FAILED,
-        ErrorCode.MAP_FAILED,
         ErrorCode.REDACT_FAILED,
         ErrorCode.REDACT_SANITIZE_FAILED,
         ErrorCode.REDACT_OUTPUT_WRITE_FAILED,
