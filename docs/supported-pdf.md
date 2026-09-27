@@ -30,6 +30,7 @@ Extension and client-supplied content type are advisory; **content decides**.
 | Files per batch | 100 | Upload | `UPLOAD_BATCH_FILE_LIMIT` |
 | Total batch size | 500 MB (proposed, Q-06) | Upload | `UPLOAD_BATCH_SIZE_LIMIT` |
 | Pages per document | 30 | Validation | `PDF_TOO_MANY_PAGES` |
+| Extractable characters per page | 8 (Stage 6) | Validation | `PDF_NO_TEXT_LAYER` |
 | Zero pages | — | Validation | `PDF_NO_PAGES` |
 | Decompressed stream size / object count | set in Stage 14 | Validation | `PDF_RESOURCE_LIMIT` |
 | Per-document processing time | set in Stage 12 | Worker | `JOB_TIMEOUT` |

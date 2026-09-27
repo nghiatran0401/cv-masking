@@ -48,7 +48,7 @@ typecheck:
 	cd $(FRONTEND) && npm run typecheck
 
 test:
-	cd $(BACKEND) && $(UV_RUN) pytest
+	cd $(BACKEND) && $(UV_RUN) python scripts/run_pytest.py
 	cd $(FRONTEND) && npm test
 
 check: guard lint typecheck test

@@ -16,7 +16,7 @@ then handoff, then **git commit** (D-18).
 | 3 | Local storage and cleanup | Complete (committed) |
 | 4 | SQLite metadata | Complete (committed) |
 | 5 | Batch upload API | Complete (committed) |
-| 6 | PDF validation and extraction | Not started |
+| 6 | PDF validation and extraction | Complete (committed) |
 | 6b | DOCX validation and extraction | Not started |
 | 7 | Deterministic detectors | Not started |
 | 8 | Candidate and reference names | Not started |

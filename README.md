@@ -4,8 +4,8 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 5 — batch create/upload/status/start API (PDF and DOCX identified by
-> content; no document parsing or masking yet). See [docs/stage-plan.md](docs/stage-plan.md).
+> **Status:** Stage 6 — PDF validation and extraction (format-neutral text model;
+> no detection or redaction yet). See [docs/stage-plan.md](docs/stage-plan.md).
 
 ## Development (macOS)
 

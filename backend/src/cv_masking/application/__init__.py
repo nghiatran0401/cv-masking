@@ -3,6 +3,7 @@
 from cv_masking.application.identify import IdentifiedKind, identify_file
 from cv_masking.application.jobs import ORPHAN_GRACE, JobService, ReconcileReport, Transition
 from cv_masking.application.uploads import UploadError, UploadLimits, UploadService
+from cv_masking.application.validation import ValidationOutcome, ValidationService
 
 __all__ = [
     "ORPHAN_GRACE",
@@ -13,5 +14,7 @@ __all__ = [
     "UploadError",
     "UploadLimits",
     "UploadService",
+    "ValidationOutcome",
+    "ValidationService",
     "identify_file",
 ]

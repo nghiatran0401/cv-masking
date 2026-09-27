@@ -6,6 +6,8 @@ HARD_MAX_FILE_BYTES: Final = 20 * 1024 * 1024
 HARD_MAX_FILES_PER_BATCH: Final = 100
 HARD_MAX_BATCH_BYTES: Final = 500 * 1024 * 1024
 HARD_MAX_PDF_PAGES: Final = 30
+MIN_PAGE_TEXT_CHARS: Final = 8
+"""Minimum extractable characters on a page before it is treated as image-only."""
 MAX_PROCESSING_ATTEMPTS: Final = 3
 DEFAULT_UPLOAD_TIMEOUT_SECONDS: Final = 60
 HARD_MAX_UPLOAD_TIMEOUT_SECONDS: Final = 15 * 60

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.141.1",
+    "pymupdf==1.28.2",
     "python-multipart>=0.0.32",
     "uvicorn>=0.53.0",
 ]
@@ -51,6 +52,10 @@ select = [
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["fitz", "fitz.*", "pymupdf", "pymupdf.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

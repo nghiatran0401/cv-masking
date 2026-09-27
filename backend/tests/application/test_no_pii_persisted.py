@@ -53,6 +53,11 @@ ALLOWED_WORDS = (
         "bytes",
         "pdf",
         "docx",
+        "validation",
+        "passed",
+        "review",
+        "pages",
+        "hidden",
     }
     | {state.value for state in DocumentState}
     | {state.value for state in BatchState}
