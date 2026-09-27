@@ -27,7 +27,7 @@ Extension and client-supplied content type are advisory; **content decides**.
 | Limit | Default | Enforced at | Error code |
 |---|---|---|---|
 | File size | 20 MB | Upload (streamed, no full buffering) | `UPLOAD_FILE_TOO_LARGE` |
-| Files per batch | 100 | Upload | `UPLOAD_BATCH_FILE_LIMIT` |
+| Files per batch | 50 (D-30) | Upload | `UPLOAD_BATCH_FILE_LIMIT` |
 | Total batch size | 500 MB (proposed, Q-06) | Upload | `UPLOAD_BATCH_SIZE_LIMIT` |
 | Pages per document | 30 | Validation | `PDF_TOO_MANY_PAGES` |
 | Extractable characters per page | 8 (Stage 6) | Validation | `PDF_NO_TEXT_LAYER` |

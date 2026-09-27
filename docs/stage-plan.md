@@ -217,7 +217,7 @@ Goal: Process large batches without freezing the laptop.
 Execute Stage 12 only. Add a bounded local queue with configurable worker count, one document per job, idempotent execution, safe retries, cancellation, graceful shutdown, and crash recovery from persisted states. Default to two workers and isolate CPU-heavy processing from the event loop. Ensure one malformed file cannot fail the batch. Add concurrency, duplicate-delivery, restart, cancellation, and cleanup tests.
 ```
 
-Acceptance: 500 lightweight synthetic jobs can be queued without 500 concurrent processes; API stays responsive; retries do not produce inconsistent outputs.
+Acceptance: a full 50-file batch (D-30) of lightweight synthetic jobs, plus a second batch queued behind it, runs without one process per job; API stays responsive; retries do not produce inconsistent outputs.
 
 Decision D-29 (approved): Stage 12 also owns the backend of the review flow: approve/deny service and API endpoints for hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run after a hidden-content approval, deleting the output on deny, and reopening a FINISHED batch (D-27). Revisit whether `DETECT_FAILED` should stay retryable when defining what a retry does.
 

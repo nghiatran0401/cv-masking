@@ -29,7 +29,7 @@ laptop and produces permanently redacted copies.
 - Shared pipeline: each format is validated and extracted into one format-neutral text
   model; detection is shared; redaction and verification are format-specific and happen in
   the original format (D-15, D-16).
-- Batch processing: up to 100 files per batch, one job per document, bounded local worker pool.
+- Batch processing: up to 50 files per batch (D-30), one job per document, bounded local worker pool.
 - Detection of the entity catalogue in [masking-policy.md](masking-policy.md).
 - Permanent redaction using PDF redaction APIs (redaction annotations + apply), never overlays.
 - Independent verification of every output before it can be `COMPLETED`.
@@ -75,7 +75,7 @@ laptop and produces permanently redacted copies.
 | D-06 | ~~Retention: outputs kept until HR clears them or 24 h, whichever is first;~~ inputs deleted as soon as the job reaches a terminal state. The 24 h part is superseded by D-23. | Tech lead, Stage 0 |
 | D-07 | Output name `redacted-<uuid>.pdf`; for DOCX input, `redacted-<uuid>.docx`. | Tech lead, Stage 0 (revised) |
 | D-08 | PoC platform is macOS only. Windows gets its own stage later; no current stage carries Windows requirements. | Tech lead, Stage 0 (revised) |
-| D-09 | Limits: 20 MB per file, 30 pages per file, 100 files per batch (configurable, cannot be raised above hard caps without code change). | Tech lead, Stage 0 |
+| D-09 | Limits: 20 MB per file, 30 pages per file, ~~100~~ 50 files per batch (D-30) (configurable, cannot be raised above hard caps without code change). | Tech lead, Stage 0 |
 | D-10 | Masking is not anonymization; keep employers, schools, job titles, skills, dates. | Tech lead, Stage 0 |
 | D-11 | Job metadata (SQLite) is purged together with the batch; no long-term audit log in the PoC. | Agent default, see Q-05 |
 | D-12 | When uncertain, fail closed: `REVIEW_REQUIRED` or `FAILED`, never `COMPLETED`. | AGENTS.md |
@@ -96,6 +96,7 @@ laptop and produces permanently redacted copies.
 | D-27 | If HR approves a hidden-content review in a FINISHED batch, the batch returns to RUNNING and finishes again once that document is settled. Implemented in Stage 12. | Tech lead, after Stage 4 |
 | D-28 | PDF mapping redacts a partly covered word whole (trailing punctuation, a label glued to its value). Accepted for the PoC because it only over-redacts; per-character boxes are not built. Revisit only if Stage 16 evaluation shows it harms usability. | Tech lead, after Stage 9 |
 | D-29 | The hidden-content approve/deny flow is owned per stage: Stage 6/6b detect and alert (done); Stage 10/10b remove each approved category and test the removal; Stage 11/11b verify no category remains; Stage 12 owns the backend (approve/deny service and API endpoints for both hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run, deleting the output on deny, and D-27); Stage 13 owns the screen. Resolves the §6 gap. | Tech lead, after Stage 9 |
+| D-30 | The batch cap is lowered from 100 to 50 files to keep the PoC simple; HR runs several batches for more CVs. The SQLite `document_count` check (0–100, Stage 4 migration) is left as a looser backstop; the domain enforces 50. | Tech lead, after Stage 10 |
 
 ## 6. Known gaps between approved scope and the stage plan
 
