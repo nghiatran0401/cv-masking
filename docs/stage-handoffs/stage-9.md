@@ -192,8 +192,9 @@ Resolved after review:
 1. **`MAP_FAILED` is now non-retryable (`T`).** Mapping is pure and
    deterministic, so neither cause can succeed on re-upload. Removed from
    `RETRYABLE_ERROR_CODES`; `docs/error-codes.md` updated.
-2. **Whole-word over-redaction.** Left open; not yet accepted or rejected.
-   Per-character boxes would be a Stage 6 extractor change.
+2. **Whole-word over-redaction is accepted for the PoC** (D-28 in
+   `docs/product-scope.md`). Revisit only if Stage 16 evaluation shows it harms
+   usability.
 3. **Counts are one per detected entity.** `DetectionOutcome.counts` counts
    matches, so a long match split into several findings counts once.
 4. **Stage 10 acceptance test** for tight line spacing is recorded in

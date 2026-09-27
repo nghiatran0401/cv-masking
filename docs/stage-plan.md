@@ -175,7 +175,7 @@ Execute Stage 10 only. Implement PdfRedactor using mapped boxes and PyMuPDF reda
 
 Acceptance: Visual overlay alone is impossible in implementation; source hash is unchanged; redacted strings are absent after reopening; document remains renderable.
 
-Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of approved hidden content. Embedded images are kept unchanged (D-13); a test must prove an image outside redaction boxes survives.
+Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of approved hidden content. Embedded images are kept unchanged (D-13); a test must prove an image outside redaction boxes survives. Per D-29, Stage 10 removes each approved hidden-content category and tests each removal; the approval itself arrives from Stage 12.
 
 Stage 8 decision (approved): draw one redaction and one label per merged Stage 9 region, never one per overlapping finding, so labels cannot overlap.
 
@@ -218,6 +218,8 @@ Execute Stage 12 only. Add a bounded local queue with configurable worker count,
 ```
 
 Acceptance: 500 lightweight synthetic jobs can be queued without 500 concurrent processes; API stays responsive; retries do not produce inconsistent outputs.
+
+Decision D-29 (approved): Stage 12 also owns the backend of the review flow: approve/deny service and API endpoints for hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run after a hidden-content approval, deleting the output on deny, and reopening a FINISHED batch (D-27). Revisit whether `DETECT_FAILED` should stay retryable when defining what a retry does.
 
 ## Stage 13 — HR interface
 Goal: Deliver the minimal usable web UI.

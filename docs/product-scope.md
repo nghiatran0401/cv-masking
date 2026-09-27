@@ -94,14 +94,14 @@ laptop and produces permanently redacted copies.
 | D-25 | Purging a batch deletes its files and then every metadata row about it (batch, documents, hashes, counts, codes); nothing is kept as a tombstone. Job metadata lives in `data/metadata/jobs.sqlite3`. | Tech lead, Stage 4 |
 | D-26 | File/metadata reconciliation (remove files no document needs, and unreferenced files older than 1 h) is built in Stage 4 as a service call; Stage 12 schedules it. | Tech lead, Stage 4 |
 | D-27 | If HR approves a hidden-content review in a FINISHED batch, the batch returns to RUNNING and finishes again once that document is settled. Implemented in Stage 12. | Tech lead, after Stage 4 |
+| D-28 | PDF mapping redacts a partly covered word whole (trailing punctuation, a label glued to its value). Accepted for the PoC because it only over-redacts; per-character boxes are not built. Revisit only if Stage 16 evaluation shows it harms usability. | Tech lead, after Stage 9 |
+| D-29 | The hidden-content approve/deny flow is owned per stage: Stage 6/6b detect and alert (done); Stage 10/10b remove each approved category and test the removal; Stage 11/11b verify no category remains; Stage 12 owns the backend (approve/deny service and API endpoints for both hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run, deleting the output on deny, and D-27); Stage 13 owns the screen. Resolves the §6 gap. | Tech lead, after Stage 9 |
 
 ## 6. Known gaps between approved scope and the stage plan
 
 These are recorded, not resolved. Each is a question for the tech lead in the Stage 0 handoff.
 
-| Gap | Impact | Interim policy until resolved |
-|---|---|---|
-| **Hidden-content approve/deny** workflow is not in Stages 6, 10, 11, or 13. | Review flow has no owner stage. | Detection belongs to Stage 6, removal to Stage 10, verification to Stage 11, UI to Stage 13. |
+None open.
 
 Resolved: detector coverage (D-14), photos (D-13, accepted risk), Windows (D-08, future
-stage), DOCX (D-15 to D-17).
+stage), DOCX (D-15 to D-17), hidden-content approve/deny ownership (D-29).
