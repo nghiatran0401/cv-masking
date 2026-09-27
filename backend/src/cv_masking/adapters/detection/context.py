@@ -10,7 +10,7 @@ from cv_masking.domain.policy import EntityType
 
 FAMILY_CONFIDENCE: Final = 0.90
 _CONTACT_LINES: Final = 15
-_SEGMENT_RE: Final = re.compile(r"\s*(?:\||•|·|;|\s[-\u2013\u2014]\s|\t)\s*")
+_SEGMENT_RE: Final = re.compile(r"\||•|·|;|\s[-\u2013\u2014]\s|\t")
 _TOKEN_RE: Final = re.compile(r"[a-z]+\.?")
 _PHONE_LIKE_RE: Final = re.compile(r"(?:\d[\s.\-]?){9,}")
 ADDRESS_CUES: Final = frozenset(

@@ -166,7 +166,10 @@ _HONORIFIC_RE: Final = re.compile(
 _EXCLUDED_PHRASE_RES: Final = tuple(
     re.compile(rf"(?<![^\W_]){re.escape(phrase)}(?![^\W_])") for phrase in EXCLUDED_PHRASES
 )
-_EMAIL_LOCAL_RE: Final = re.compile(r"([A-Za-z0-9._%+\-]+)@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_EMAIL_LOCAL_RE: Final = re.compile(
+    r"(?<![A-Za-z0-9._%+\-])([A-Za-z0-9._%+\-]+)@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,}"
+)
+"""Same shape as the detector's email pattern; see `_EMAIL_RE` there."""
 
 
 @dataclass(frozen=True, slots=True)

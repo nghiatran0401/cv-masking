@@ -200,6 +200,30 @@ Resolved after review:
 4. **Stage 10 acceptance test** for tight line spacing is recorded in
    `docs/stage-plan.md` under Stage 10.
 
+## Post-handoff security fix (quadratic regex backtracking)
+
+A security review found detection patterns whose running time grew with the
+square of the line length. On the old code, a 100k-character line took 20–30 s, and a
+400k-character dotted line took about 9 minutes. The fixes change no detection
+result for well-formed text:
+
+- `sections.py`: lines over `MAX_HEADING_CHARS` (200) are never tested as headings.
+- `context.py`: the contact-block segment separator no longer absorbs surrounding
+  whitespace (pieces are still stripped afterwards).
+- `detector.py` and `names.py`: both email patterns may only start where a
+  local-part run starts (lookbehind), and the domain is capped at 253
+  characters (the DNS name limit). The cap matters for Presidio, which uses the
+  `regex` engine; that engine backtracks quadratically on long dotted runs even
+  when `re` does not.
+
+`tests/application/test_detect_timing.py` runs 15 adversarial line shapes through
+`DetectionService` with a 5 s budget each. Three shapes were rerun against the old
+code; all three failed, and the dotted-domain shape took about 9 minutes. It also checks that the bounded
+email pattern still matches the whole address in six contexts, including a trailing
+full stop and a trailing hyphenated word. The remaining residual (quadratic cost in
+the number of hits inside Presidio's duplicate removal) and the per-document time
+budget are recorded in `docs/stage-plan.md` under Stage 12.
+
 ## Suggested commit message
 
 ```text

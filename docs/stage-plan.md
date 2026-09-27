@@ -221,6 +221,8 @@ Acceptance: 500 lightweight synthetic jobs can be queued without 500 concurrent 
 
 Decision D-29 (approved): Stage 12 also owns the backend of the review flow: approve/deny service and API endpoints for hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run after a hidden-content approval, deleting the output on deny, and reopening a FINISHED batch (D-27). Revisit whether `DETECT_FAILED` should stay retryable when defining what a retry does.
 
+Per-document time budget (security review after Stage 9): every job gets a wall-clock limit (supported-pdf.md, "Per-document processing time") that ends in `JOB_TIMEOUT`. The limit must be enforced by terminating the worker process, not by a flag the job checks, because a running regex cannot be interrupted from another thread. Detection is near-linear on the known adversarial shapes (`tests/application/test_detect_timing.py`), but the limit is the backstop for shapes not yet found. For example, text with thousands of ID-shaped hits still costs time quadratic in the hit count inside Presidio's duplicate removal: about 1.4 s at 100k characters and 5 s at 200k. Tests: a detector stub that never returns ends in `JOB_TIMEOUT`, the worker is replaced, and no partial output survives. Because detection is deterministic, decide whether a `JOB_TIMEOUT` retry is useful or should become terminal after one attempt.
+
 ## Stage 13 — HR interface
 Goal: Deliver the minimal usable web UI.
 

@@ -27,7 +27,11 @@ _HIGH: Final = 0.92
 _CONTEXT: Final = 0.88
 _REVIEW: Final = 0.70
 
-_EMAIL_RE: Final = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+_EMAIL_RE: Final = r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,}"
+"""Leftmost matches always start where a local-part run starts, so the lookbehind
+changes no result; it stops rescans from inside long runs. The 253 cap is the DNS
+name limit; unbounded, the `regex` engine Presidio uses backtracks quadratically on
+long dotted runs."""
 _PHONE_RE: Final = (
     r"(?<!\d)(?:(?:\+84|\(\+84\)|84)[\s.\-]*|[0])"
     r"(?:[35789](?:[\s.\-]?\d){8}|2\d(?:[\s.\-]?\d){8})(?!\d)"

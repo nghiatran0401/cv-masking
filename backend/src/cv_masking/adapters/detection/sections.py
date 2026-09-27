@@ -75,6 +75,9 @@ OTHER_HEADINGS: Final = (
     "contact information",
 )
 _BULLET: Final = r"[\s\-*•·\d.)]*"
+MAX_HEADING_CHARS: Final = 200
+"""Longer lines are never headings. The heading patterns backtrack quadratically on
+long whitespace runs, so they must only ever see short lines."""
 
 
 def _alternation(headings: tuple[str, ...]) -> str:
@@ -188,10 +191,14 @@ def build_view(part: TextPart) -> PartView:
 
 
 def is_heading_text(folded: str) -> bool:
+    if len(folded) > MAX_HEADING_CHARS:
+        return False
     return any(pattern.match(folded) for _, pattern in _PURE)
 
 
 def _heading_of(line: Line) -> tuple[SectionKind, int | None] | None:
+    if len(line.folded) > MAX_HEADING_CHARS:
+        return None
     for kind, pattern in _PURE:
         if pattern.match(line.folded):
             return kind, None
