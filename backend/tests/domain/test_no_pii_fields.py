@@ -15,6 +15,7 @@ from cv_masking.domain.findings import (
     EntityFinding,
     FindingCounts,
     PdfLocation,
+    RedactionRegion,
 )
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import MaskingPolicy
@@ -39,6 +40,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "replacement_label",
         "requires_review",
     ),
+    RedactionRegion: ("page_number", "boxes", "entity_type", "finding_ids"),
     FindingCounts: ("items",),
     MaskingPolicy: ("mask_salary", "version"),
     VerificationResult: (

@@ -145,8 +145,8 @@ validation reasons.
 | `DETECT_LOW_CONFIDENCE` | — | One or more findings require review. |
 | `DETECT_NO_CANDIDATE_NAME` | — | No candidate name was detected; the name may be unmasked, review required. |
 | `DETECT_FAILED` | R | A detector raised an error. |
-| `MAP_AMBIGUOUS` | — | A finding could not be mapped to boxes unambiguously; review required. |
-| `MAP_FAILED` | R | Mapping raised an error. |
+| `MAP_AMBIGUOUS` | — | A finding's word overlaps another word drawn on top of it; all candidate boxes are redacted, review required. |
+| `MAP_FAILED` | R | Mapping raised an error, or a visible character of a finding has no source word box. |
 
 ### Redaction (Stages 10, 10b)
 

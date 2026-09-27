@@ -347,7 +347,7 @@ def reference_line_names(view: PartView) -> list[Hit]:
         honorific = _HONORIFIC_RE.match(line.folded)
         if honorific is not None:
             rest = line.span(honorific.start("rest"), honorific.start("rest") + 1)[0]
-            segment = _first_segment(view.text, rest, line.end)
+            segment = _first_segment(view.text, rest, line.end, cut_label=True)
             if segment is None:
                 continue
             start, end, tokens = segment
@@ -363,7 +363,7 @@ def reference_line_names(view: PartView) -> list[Hit]:
                     )
                 )
             continue
-        segment = _first_segment(view.text, line.start, line.end)
+        segment = _first_segment(view.text, line.start, line.end, cut_label=True)
         if segment is None:
             continue
         start, end, tokens = segment

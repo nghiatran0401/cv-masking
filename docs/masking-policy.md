@@ -131,7 +131,11 @@ Synthetic example people used in docs and fixtures: **Nguyễn Văn Mẫu**,
 ## 5. Overlap resolution and replacement
 
 - Overlapping findings merge into the union of their boxes; the more specific type wins the
-  label (`NATIONAL_ID` > `PHONE`; `EMAIL` > `PERSONAL_URL`).
+  label (`NATIONAL_ID` > `PHONE`; `EMAIL` > `PERSONAL_URL`). The full order is
+  `LABEL_PRIORITY` in `domain/policy.py`.
+- PDF mapping (Stage 9) works on whole extracted words. A word only partly inside a finding
+  (trailing punctuation, a label glued to its value) is redacted whole. Words on one line
+  merge into one box only when no unrelated word lies inside the merged box.
 - PDF: a label is drawn only if it fits inside the redaction box at ≥ 6 pt using a built-in
   font (labels are ASCII). Otherwise the box is filled solid black with no label.
   Redaction fill is black; label text is white.

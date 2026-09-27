@@ -64,6 +64,39 @@ REPLACEMENT_LABELS: Final[Mapping[EntityType, str]] = MappingProxyType(
 )
 
 
+LABEL_PRIORITY: Final[Mapping[EntityType, int]] = MappingProxyType(
+    {
+        EntityType.EMAIL: 100,
+        EntityType.NATIONAL_ID: 90,
+        EntityType.PASSPORT: 85,
+        EntityType.DATE_OF_BIRTH: 80,
+        EntityType.SALARY: 80,
+        EntityType.POSTAL_ADDRESS: 75,
+        EntityType.PHONE: 70,
+        EntityType.CANDIDATE_NAME: 65,
+        EntityType.REFERENCE_NAME: 64,
+        EntityType.PERSONAL_URL: 60,
+        EntityType.FAMILY_DETAILS: 55,
+        EntityType.GENDER: 50,
+        EntityType.MARITAL_STATUS: 50,
+        EntityType.NATIONALITY: 50,
+        EntityType.RELIGION: 50,
+        EntityType.ETHNICITY: 50,
+        EntityType.HEALTH: 50,
+    }
+)
+"""The more specific type wins an overlap's label (masking-policy.md §5)."""
+
+
+def label_winner(types: Iterable[EntityType]) -> EntityType:
+    """Highest-priority type; ties go to the earlier ``EntityType`` member."""
+    order = list(EntityType)
+    chosen = sorted(set(types), key=lambda entity: (-LABEL_PRIORITY[entity], order.index(entity)))
+    if not chosen:
+        raise InvariantError("label_winner needs at least one entity type")
+    return chosen[0]
+
+
 class PolicyAction(StrEnum):
     REDACT = "redact"
     REDACT_AND_REVIEW = "redact_and_review"

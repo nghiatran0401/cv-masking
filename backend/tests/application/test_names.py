@@ -38,7 +38,7 @@ from synthetic_names import (
 
 from cv_masking.adapters.detection import PresidioDetector
 from cv_masking.application import DetectionOutcome, DetectionService
-from cv_masking.domain.codes import ReviewReason
+from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import BoundingBox, PdfLocation
 from cv_masking.domain.formats import DocumentFormat
@@ -335,12 +335,12 @@ def test_document_without_candidate_name_requires_review(service: DetectionServi
     assert outcome.review == frozenset({ReviewReason.DETECT_NO_CANDIDATE_NAME})
 
 
-def test_pdf_match_without_boxes_requires_review(service: DetectionService) -> None:
+def test_pdf_match_without_boxes_fails_mapping(service: DetectionService) -> None:
     text = f"Email: {UNRELATED_EMAIL}"
     part = TextPart(text, (TextSpan(0, 5, (BoundingBox(0.0, 0.0, 5.0, 10.0),)),), page_number=1)
     outcome = _run(service, ExtractedDocument(DocumentFormat.PDF, (part,)))
-    assert any(m.entity_type is EntityType.EMAIL for m in outcome.matches)
-    assert ReviewReason.MAP_AMBIGUOUS in outcome.review
+    assert outcome.failure is ErrorCode.MAP_FAILED
+    assert outcome.findings == ()
 
 
 @pytest.mark.parametrize("entity", sorted(_NAME_TYPES), ids=lambda e: e.value.lower())

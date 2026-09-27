@@ -21,6 +21,7 @@ from cv_masking.domain.limits import HARD_MAX_PDF_PAGES
 from cv_masking.domain.policy import REPLACEMENT_LABELS, EntityType
 
 MAX_BOXES_PER_FINDING: Final = 64
+MAX_BOXES_PER_REGION: Final = 512
 _DOCX_PART_RE: Final = re.compile(r"word/[a-z][a-z0-9]{0,31}\.xml")
 
 
@@ -107,6 +108,44 @@ class EntityFinding:
                 "EntityFinding.replacement_label must match the policy label for its type"
             )
         require_bool(self.requires_review, "EntityFinding.requires_review")
+
+
+@dataclass(frozen=True, slots=True)
+class RedactionRegion:
+    """One PDF redaction area: overlapping findings merged, one label for the whole region.
+
+    The label is the highest-priority member type (masking-policy.md §5). Boxes
+    are never unioned across lines, so a region never covers unrelated words.
+    """
+
+    page_number: int
+    boxes: tuple[BoundingBox, ...]
+    entity_type: EntityType
+    finding_ids: tuple[FindingId, ...]
+
+    def __post_init__(self) -> None:
+        require_int(
+            self.page_number, "RedactionRegion.page_number", minimum=1, maximum=HARD_MAX_PDF_PAGES
+        )
+        if not isinstance(self.boxes, tuple) or not self.boxes:
+            raise InvariantError("RedactionRegion.boxes must be a non-empty tuple")
+        if len(self.boxes) > MAX_BOXES_PER_REGION:
+            raise InvariantError("RedactionRegion.boxes has too many boxes")
+        if not all(isinstance(box, BoundingBox) for box in self.boxes):
+            raise InvariantError("RedactionRegion.boxes must contain BoundingBox values")
+        if not isinstance(self.entity_type, EntityType):
+            raise InvariantError("RedactionRegion.entity_type must be an EntityType")
+        if (
+            not isinstance(self.finding_ids, tuple)
+            or not self.finding_ids
+            or not all(isinstance(item, FindingId) for item in self.finding_ids)
+            or len(set(self.finding_ids)) != len(self.finding_ids)
+        ):
+            raise InvariantError("RedactionRegion.finding_ids must be unique FindingId values")
+
+    @property
+    def replacement_label(self) -> str:
+        return REPLACEMENT_LABELS[self.entity_type]
 
 
 @dataclass(frozen=True, slots=True)

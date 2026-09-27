@@ -1,15 +1,25 @@
-"""Run detectors and apply policy thresholds. Text is never stored.
+"""Run detectors, apply policy thresholds, and place findings. Text is never stored.
 
 A document fails to review when any finding is uncertain, when no candidate
-name was found (a CV always names its candidate), or when a match cannot be
-placed on the page.
+name was found (a CV always names its candidate), or when a PDF finding's
+boxes are ambiguous. It fails outright (``MAP_FAILED``) when any finding cannot
+be placed on its page or part at all.
 """
 
 import logging
 from uuid import uuid4
 
+from cv_masking.application.mapping import build_regions, map_span
 from cv_masking.domain.codes import ErrorCode, ReviewReason
-from cv_masking.domain.findings import DocxLocation, EntityFinding, FindingCounts, PdfLocation
+from cv_masking.domain.findings import (
+    MAX_BOXES_PER_FINDING,
+    DocxLocation,
+    EntityFinding,
+    FindingCounts,
+    FindingLocation,
+    PdfLocation,
+    RedactionRegion,
+)
 from cv_masking.domain.ids import FindingId
 from cv_masking.domain.policy import (
     DISCARD_THRESHOLD,
@@ -25,7 +35,14 @@ logger = logging.getLogger("cv_masking.detection")
 
 
 class DetectionOutcome:
-    __slots__ = ("failure", "findings", "matches", "review", "suppressed_low_confidence")
+    __slots__ = (
+        "failure",
+        "findings",
+        "matches",
+        "regions",
+        "review",
+        "suppressed_low_confidence",
+    )
 
     def __init__(
         self,
@@ -34,12 +51,14 @@ class DetectionOutcome:
         suppressed_low_confidence: int,
         review: frozenset[ReviewReason],
         failure: ErrorCode | None = None,
+        regions: tuple[RedactionRegion, ...] = (),
     ) -> None:
         self.findings = findings
         self.matches = matches
         self.suppressed_low_confidence = suppressed_low_confidence
         self.review = review
         self.failure = failure
+        self.regions = regions
 
     @property
     def counts(self) -> FindingCounts:
@@ -56,7 +75,7 @@ class DetectionService:
         self._detector = detector
 
     def detect(self, document: ExtractedDocument, policy: MaskingPolicy) -> DetectionOutcome:
-        """Find entities. Salary is always returned; policy does not hide it."""
+        """Find and place entities. Salary is always returned; policy does not hide it."""
         del policy
         try:
             raw = self._detector.detect(document)
@@ -64,22 +83,35 @@ class DetectionService:
             logger.info("detection failed")
             return DetectionOutcome((), (), 0, frozenset(), ErrorCode.DETECT_FAILED)
         kept, suppressed = _apply_thresholds(raw)
-        located = [(match, _to_finding(match, document)) for match in kept]
-        findings = tuple(finding for _, finding in located if finding is not None)
+        findings: list[EntityFinding] = []
+        ambiguous = 0
+        for match in kept:
+            placed = _place(match, document)
+            if placed is None:
+                logger.info("mapping failed matches=%d", len(kept))
+                return DetectionOutcome((), (), suppressed, frozenset(), ErrorCode.MAP_FAILED)
+            locations, is_ambiguous = placed
+            ambiguous += int(is_ambiguous)
+            findings.extend(_finding(match, location) for location in locations)
         review: set[ReviewReason] = set()
         if any(item.requires_review for item in findings):
             review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
         if not any(item.entity_type is EntityType.CANDIDATE_NAME for item in findings):
             review.add(ReviewReason.DETECT_NO_CANDIDATE_NAME)
-        if any(finding is None for _, finding in located):
+        if ambiguous:
             review.add(ReviewReason.MAP_AMBIGUOUS)
+        regions = build_regions(findings)
         logger.info(
-            "detection findings=%d suppressed=%d review=%d",
+            "detection findings=%d suppressed=%d ambiguous=%d regions=%d review=%d",
             len(findings),
             suppressed,
+            ambiguous,
+            len(regions),
             len(review),
         )
-        return DetectionOutcome(findings, kept, suppressed, frozenset(review))
+        return DetectionOutcome(
+            tuple(findings), kept, suppressed, frozenset(review), regions=regions
+        )
 
 
 def _apply_thresholds(result: DetectionResult) -> tuple[tuple[TextMatch, ...], int]:
@@ -93,23 +125,29 @@ def _apply_thresholds(result: DetectionResult) -> tuple[tuple[TextMatch, ...], i
     return tuple(kept), suppressed
 
 
-def _to_finding(match: TextMatch, document: ExtractedDocument) -> EntityFinding | None:
+def _place(
+    match: TextMatch, document: ExtractedDocument
+) -> tuple[tuple[FindingLocation, ...], bool] | None:
+    """Locations for one match (a long PDF match may need several), and whether
+    its boxes are ambiguous. None means the match cannot be placed."""
     part = _part_for(match, document)
-    if part is None:
+    if part is None or match.end > len(part.text):
         return None
-    location: DocxLocation | PdfLocation
     if match.part_name is not None:
-        location = DocxLocation(match.part_name, match.start, match.end)
-    else:
-        boxes = tuple(
-            box
-            for span in part.spans
-            if span.start < match.end and span.end > match.start
-            for box in span.boxes
-        )
-        if not boxes or match.page_number is None:
-            return None
-        location = PdfLocation(match.page_number, boxes)
+        return (DocxLocation(match.part_name, match.start, match.end),), False
+    if match.page_number is None:
+        return None
+    mapped = map_span(part, match.start, match.end)
+    if mapped is None:
+        return None
+    chunks = tuple(
+        PdfLocation(match.page_number, mapped.boxes[index : index + MAX_BOXES_PER_FINDING])
+        for index in range(0, len(mapped.boxes), MAX_BOXES_PER_FINDING)
+    )
+    return chunks, mapped.ambiguous
+
+
+def _finding(match: TextMatch, location: FindingLocation) -> EntityFinding:
     return EntityFinding(
         finding_id=FindingId(uuid4()),
         entity_type=match.entity_type,

@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 from cv_masking.domain.errors import InvariantError, PolicyError
 from cv_masking.domain.policy import (
     DISCARD_THRESHOLD,
+    LABEL_PRIORITY,
     MANDATORY_ENTITY_TYPES,
     OPTIONAL_ENTITY_TYPES,
     REDACT_THRESHOLD,
@@ -41,6 +42,12 @@ def test_entity_types_and_thresholds_match_the_masking_policy_doc() -> None:
     assert (REDACT_THRESHOLD, DISCARD_THRESHOLD) == (0.85, 0.50)
     assert MaskingPolicy().redacted_types == set(EntityType)
     assert MaskingPolicy(mask_salary=False).redacted_types == MANDATORY_ENTITY_TYPES
+
+
+def test_every_entity_type_has_a_label_priority() -> None:
+    assert set(LABEL_PRIORITY) == set(EntityType)
+    assert LABEL_PRIORITY[EntityType.NATIONAL_ID] > LABEL_PRIORITY[EntityType.PHONE]
+    assert LABEL_PRIORITY[EntityType.EMAIL] > LABEL_PRIORITY[EntityType.PERSONAL_URL]
 
 
 def test_no_mandatory_type_can_be_disabled() -> None:

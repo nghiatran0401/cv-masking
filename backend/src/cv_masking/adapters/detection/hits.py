@@ -2,27 +2,7 @@
 
 from dataclasses import dataclass
 
-from cv_masking.domain.policy import EntityType
-
-_PRIORITY = {
-    EntityType.EMAIL: 100,
-    EntityType.NATIONAL_ID: 90,
-    EntityType.PASSPORT: 85,
-    EntityType.DATE_OF_BIRTH: 80,
-    EntityType.SALARY: 80,
-    EntityType.POSTAL_ADDRESS: 75,
-    EntityType.PHONE: 70,
-    EntityType.CANDIDATE_NAME: 65,
-    EntityType.REFERENCE_NAME: 64,
-    EntityType.PERSONAL_URL: 60,
-    EntityType.FAMILY_DETAILS: 55,
-    EntityType.GENDER: 50,
-    EntityType.MARITAL_STATUS: 50,
-    EntityType.NATIONALITY: 50,
-    EntityType.RELIGION: 50,
-    EntityType.ETHNICITY: 50,
-    EntityType.HEALTH: 50,
-}
+from cv_masking.domain.policy import LABEL_PRIORITY, EntityType
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +23,7 @@ def resolve(hits: list[Hit]) -> list[Hit]:
     """
     merged = _merge_same_type(hits)
     ordered = sorted(
-        merged, key=lambda hit: (-(hit.end - hit.start), -_PRIORITY.get(hit.entity_type, 10))
+        merged, key=lambda hit: (-(hit.end - hit.start), -LABEL_PRIORITY[hit.entity_type])
     )
     kept: list[Hit] = []
     for hit in ordered:
