@@ -6,7 +6,7 @@ from typing import Final, Protocol
 from cv_masking.domain._validation import require_int
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.errors import InvariantError
-from cv_masking.domain.findings import RedactionRegion
+from cv_masking.domain.findings import DocxRedactionRange, RedactionRegion
 
 REDACTION_ERROR_CODES: Final = frozenset(
     {
@@ -39,9 +39,11 @@ class RedactionResult:
             raise InvariantError("a failed RedactionResult has no region counts")
 
 
-class DocumentRedactor(Protocol):
+class DocumentRedactor[Unit](Protocol):
+    """``Unit`` is what one format redacts: PDF regions or DOCX character ranges."""
+
     def redact(
-        self, data: bytes, regions: tuple[RedactionRegion, ...], *, remove_hidden: bool
+        self, data: bytes, units: tuple[Unit, ...], *, remove_hidden: bool
     ) -> RedactionResult:
         """Return new output bytes; ``data`` is never modified.
 
@@ -49,3 +51,7 @@ class DocumentRedactor(Protocol):
         alert. Without it, any hidden content fails with REDACT_SANITIZE_FAILED.
         """
         ...
+
+
+type PdfRedactor = DocumentRedactor[RedactionRegion]
+type DocxRedactor = DocumentRedactor[DocxRedactionRange]

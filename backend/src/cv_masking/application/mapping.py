@@ -9,7 +9,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from cv_masking.domain.findings import BoundingBox, EntityFinding, PdfLocation, RedactionRegion
+from cv_masking.domain.findings import (
+    BoundingBox,
+    DocxLocation,
+    DocxRedactionRange,
+    EntityFinding,
+    PdfLocation,
+    RedactionRegion,
+)
 from cv_masking.domain.policy import label_winner
 from cv_masking.ports.extraction import TextPart
 
@@ -96,6 +103,39 @@ def build_regions(findings: Sequence[EntityFinding]) -> tuple[RedactionRegion, .
             )
         )
     return tuple(sorted(regions, key=lambda r: (r.page_number, r.boxes[0].y0, r.boxes[0].x0)))
+
+
+def build_docx_ranges(findings: Sequence[EntityFinding]) -> tuple[DocxRedactionRange, ...]:
+    """Merge DOCX findings whose ranges overlap in one part; label with the winning type."""
+    located = sorted(
+        (
+            (finding, finding.location)
+            for finding in findings
+            if isinstance(finding.location, DocxLocation)
+        ),
+        key=lambda item: (item[1].part_name, item[1].start, item[1].end),
+    )
+    groups: list[list[tuple[EntityFinding, DocxLocation]]] = []
+    for item in located:
+        last = groups[-1] if groups else None
+        if (
+            last is not None
+            and last[0][1].part_name == item[1].part_name
+            and item[1].start < max(member[1].end for member in last)
+        ):
+            last.append(item)
+        else:
+            groups.append([item])
+    return tuple(
+        DocxRedactionRange(
+            part_name=group[0][1].part_name,
+            start=group[0][1].start,
+            end=max(member[1].end for member in group),
+            entity_type=label_winner(member[0].entity_type for member in group),
+            finding_ids=tuple(member[0].finding_id for member in group),
+        )
+        for group in groups
+    )
 
 
 def _fully_covered(part: TextPart, start: int, end: int, chosen: list[int]) -> bool:

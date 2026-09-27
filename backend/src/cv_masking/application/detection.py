@@ -9,11 +9,12 @@ be placed on its page or part at all.
 import logging
 from uuid import uuid4
 
-from cv_masking.application.mapping import build_regions, map_span
+from cv_masking.application.mapping import build_docx_ranges, build_regions, map_span
 from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.findings import (
     MAX_BOXES_PER_FINDING,
     DocxLocation,
+    DocxRedactionRange,
     EntityFinding,
     FindingCounts,
     FindingLocation,
@@ -36,6 +37,7 @@ logger = logging.getLogger("cv_masking.detection")
 
 class DetectionOutcome:
     __slots__ = (
+        "docx_ranges",
         "failure",
         "findings",
         "matches",
@@ -52,6 +54,7 @@ class DetectionOutcome:
         review: frozenset[ReviewReason],
         failure: ErrorCode | None = None,
         regions: tuple[RedactionRegion, ...] = (),
+        docx_ranges: tuple[DocxRedactionRange, ...] = (),
     ) -> None:
         self.findings = findings
         self.matches = matches
@@ -59,6 +62,7 @@ class DetectionOutcome:
         self.review = review
         self.failure = failure
         self.regions = regions
+        self.docx_ranges = docx_ranges
 
     @property
     def counts(self) -> FindingCounts:
@@ -78,7 +82,7 @@ class DetectionService:
     def detect(self, document: ExtractedDocument, policy: MaskingPolicy) -> DetectionOutcome:
         """Find and place entities.
 
-        Salary findings are always returned and counted. Regions, and the
+        Salary findings are always returned and counted. Regions and DOCX ranges, and the
         low-confidence and ambiguous-mapping reviews, cover only the types the
         policy redacts.
         """
@@ -107,16 +111,22 @@ class DetectionService:
         if ambiguous:
             review.add(ReviewReason.MAP_AMBIGUOUS)
         regions = build_regions(redacted)
+        docx_ranges = build_docx_ranges(redacted)
         logger.info(
             "detection findings=%d suppressed=%d ambiguous=%d regions=%d review=%d",
             len(findings),
             suppressed,
             ambiguous,
-            len(regions),
+            len(regions) + len(docx_ranges),
             len(review),
         )
         return DetectionOutcome(
-            tuple(findings), kept, suppressed, frozenset(review), regions=regions
+            tuple(findings),
+            kept,
+            suppressed,
+            frozenset(review),
+            regions=regions,
+            docx_ranges=docx_ranges,
         )
 
 

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import fields
+from uuid import uuid4
 
 import pytest
 from domain_builders import created, later, new_object_ref, uploaded, validating
@@ -12,13 +13,14 @@ from cv_masking.domain.errors import DomainError
 from cv_masking.domain.findings import (
     BoundingBox,
     DocxLocation,
+    DocxRedactionRange,
     EntityFinding,
     FindingCounts,
     PdfLocation,
     RedactionRegion,
 )
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
-from cv_masking.domain.policy import MaskingPolicy
+from cv_masking.domain.policy import EntityType, MaskingPolicy
 from cv_masking.domain.verification import VerificationResult
 
 EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
@@ -41,6 +43,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "requires_review",
     ),
     RedactionRegion: ("page_number", "boxes", "entity_type", "finding_ids"),
+    DocxRedactionRange: ("part_name", "start", "end", "entity_type", "finding_ids"),
     FindingCounts: ("items",),
     MaskingPolicy: ("mask_salary", "version"),
     VerificationResult: (
@@ -87,6 +90,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
 STRING_FIELDS = {
     (Sha256Digest, "value"),
     (DocxLocation, "part_name"),
+    (DocxRedactionRange, "part_name"),
     (EntityFinding, "detector_id"),
     (EntityFinding, "detector_version"),
     (EntityFinding, "replacement_label"),
@@ -112,6 +116,7 @@ def _attempts() -> list[Callable[[], object]]:
     return [
         lambda: Sha256Digest(MARKER),
         lambda: DocxLocation(MARKER, 0, 1),
+        lambda: DocxRedactionRange(MARKER, 0, 1, EntityType.EMAIL, (FindingId(uuid4()),)),
         lambda: MaskingPolicy(version=MARKER),
         lambda: EntityFinding(
             finding_id=MARKER,  # type: ignore[arg-type]

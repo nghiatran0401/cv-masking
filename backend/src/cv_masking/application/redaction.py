@@ -5,14 +5,14 @@ The job state transitions around this call (``start_processing``,
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable
 
 from cv_masking.application.detection import DetectionOutcome
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
-from cv_masking.ports.redaction import DocumentRedactor
+from cv_masking.ports.redaction import DocxRedactor, PdfRedactor, RedactionResult
 from cv_masking.ports.storage import InputStore, ObjectSink, OutputStore, StorageError, StoredObject
 
 logger = logging.getLogger("cv_masking.redaction")
@@ -37,22 +37,25 @@ class RedactionOutcome:
 
 
 class RedactionService:
-    __slots__ = ("_inputs", "_outputs", "_redactors")
+    __slots__ = ("_docx", "_inputs", "_outputs", "_pdf")
 
     def __init__(
         self,
         inputs: InputStore,
         outputs: OutputStore,
-        redactors: Mapping[DocumentFormat, DocumentRedactor],
+        *,
+        pdf: PdfRedactor | None = None,
+        docx: DocxRedactor | None = None,
     ) -> None:
         self._inputs = inputs
         self._outputs = outputs
-        self._redactors = dict(redactors)
+        self._pdf = pdf
+        self._docx = docx
 
     def redact(
         self, source: StoredObject, detection: DetectionOutcome, *, remove_hidden: bool
     ) -> RedactionOutcome:
-        """Write a new output for ``source`` from the detection regions.
+        """Write a new output for ``source`` from the detection regions or DOCX ranges.
 
         ``remove_hidden`` is True only when HR approved the hidden-content alert.
         The source hash is checked before reading and again after the output is
@@ -61,9 +64,7 @@ class RedactionService:
         if detection.failure is not None:
             raise InvariantError("redaction needs a successful detection outcome")
         fmt = source.document_format
-        redactor = self._redactors.get(fmt)
-        if redactor is None:
-            raise InvariantError("redaction has no redactor for this document format")
+        run = self._runner(fmt, detection, remove_hidden=remove_hidden)
         try:
             self._inputs.verify(source)
             with self._inputs.open(source.ref, fmt) as handle:
@@ -71,7 +72,7 @@ class RedactionService:
         except StorageError as error:
             logger.info("redaction input unavailable")
             return RedactionOutcome(None, error.code)
-        result = redactor.redact(data, detection.regions, remove_hidden=remove_hidden)
+        result = run(data)
         output = result.output
         if result.failure is not None or output is None:
             logger.info("redaction failed")
@@ -93,8 +94,20 @@ class RedactionService:
             return RedactionOutcome(None, error.code)
         logger.info(
             "redaction written regions=%d labelled=%d solid=%d",
-            len(detection.regions),
+            len(detection.regions) + len(detection.docx_ranges),
             result.labelled_regions,
             result.solid_regions,
         )
         return RedactionOutcome(stored, None, result.labelled_regions, result.solid_regions)
+
+    def _runner(
+        self, fmt: DocumentFormat, detection: DetectionOutcome, *, remove_hidden: bool
+    ) -> Callable[[bytes], RedactionResult]:
+        pdf, docx = self._pdf, self._docx
+        if fmt is DocumentFormat.PDF and pdf is not None:
+            return lambda data: pdf.redact(data, detection.regions, remove_hidden=remove_hidden)
+        if fmt is DocumentFormat.DOCX and docx is not None:
+            return lambda data: docx.redact(
+                data, detection.docx_ranges, remove_hidden=remove_hidden
+            )
+        raise InvariantError("redaction has no redactor for this document format")

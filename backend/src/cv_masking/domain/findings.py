@@ -149,6 +149,33 @@ class RedactionRegion:
 
 
 @dataclass(frozen=True, slots=True)
+class DocxRedactionRange:
+    """One DOCX redaction: overlapping findings in a part merged, one label for the range."""
+
+    part_name: str
+    start: int
+    end: int
+    entity_type: EntityType
+    finding_ids: tuple[FindingId, ...]
+
+    def __post_init__(self) -> None:
+        DocxLocation(self.part_name, self.start, self.end)
+        if not isinstance(self.entity_type, EntityType):
+            raise InvariantError("DocxRedactionRange.entity_type must be an EntityType")
+        if (
+            not isinstance(self.finding_ids, tuple)
+            or not self.finding_ids
+            or not all(isinstance(item, FindingId) for item in self.finding_ids)
+            or len(set(self.finding_ids)) != len(self.finding_ids)
+        ):
+            raise InvariantError("DocxRedactionRange.finding_ids must be unique FindingId values")
+
+    @property
+    def replacement_label(self) -> str:
+        return REPLACEMENT_LABELS[self.entity_type]
+
+
+@dataclass(frozen=True, slots=True)
 class FindingCounts:
     """Number of findings per entity type; the only finding data a job keeps."""
 

@@ -129,11 +129,11 @@ and the displayed result of fields.
 |---|---|
 | Core, app, and custom document properties (`docProps/*`: creator, last modified by, title, company, manager, custom fields) | Often contain the candidate's name. |
 | Thumbnail (`docProps/thumbnail.*`) | It is a picture of page 1. |
-| Hyperlink targets (relationship `Target` of hyperlinks, including `mailto:`) | Hold emails and profile URLs; the visible text is redacted separately. |
-| Field codes (`w:instrText`) | Can hold hidden values; the displayed result text is kept and scanned. |
+| Hyperlink targets (relationship `Target` of hyperlinks, including `mailto:`) and tooltips | Hold emails and profile URLs. Every external relationship is removed and the link's `r:id` dropped; the visible text stays and is redacted separately. |
+| Field codes (`w:instrText`; `w:fldSimple` is unwrapped to its result) | Can hold hidden values; the displayed result text is kept and scanned. |
 | Image alt text and titles (`wp:docPr` `descr`/`title`) | Can hold names. Images themselves are kept (D-13). |
 | Tracked-change and comment author lists (`people.xml`, author attributes) | Names. |
-| Attached template path and document variables (`settings.xml`) | Paths can contain the OS user name. |
+| Attached template path, document variables, and mail-merge data source (`settings.xml`) | Paths can contain the OS user name. |
 | Revision-session ids (`rsid*`) | Linkable metadata. |
 
 ### 6.4 Hidden content (always removed and reported, D-32)

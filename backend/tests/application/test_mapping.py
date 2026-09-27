@@ -10,13 +10,14 @@ from mapping_debug import words_under
 from synthetic_mapping import EMAIL, NAME, PHONE, glued, page
 
 from cv_masking.application import DetectionOutcome, DetectionService
-from cv_masking.application.mapping import build_regions, map_span
+from cv_masking.application.mapping import build_docx_ranges, build_regions, map_span
 from cv_masking.domain.codes import ErrorCode, ReviewReason, is_retryable
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import (
     MAX_BOXES_PER_FINDING,
     BoundingBox,
     DocxLocation,
+    DocxRedactionRange,
     EntityFinding,
     PdfLocation,
     RedactionRegion,
@@ -325,6 +326,68 @@ def test_docx_findings_have_no_regions() -> None:
     outcome = DetectionService(_Fixed(match)).detect(document, MaskingPolicy())
     assert isinstance(outcome.findings[0].location, DocxLocation)
     assert outcome.regions == ()
+    assert [(r.start, r.end, r.entity_type) for r in outcome.docx_ranges] == [
+        (7, len(text), EntityType.EMAIL)
+    ]
+
+
+def _docx_finding(entity: EntityType, start: int, end: int, part: str) -> EntityFinding:
+    return EntityFinding(
+        FindingId(uuid4()),
+        entity,
+        DocxLocation(part, start, end),
+        0.9,
+        "test.fixed",
+        "1.0.0",
+        REPLACEMENT_LABELS[entity],
+        False,
+    )
+
+
+def test_docx_ranges_merge_overlaps_within_one_part_only() -> None:
+    body, header = "word/document.xml", "word/header1.xml"
+    findings = [
+        _docx_finding(EntityType.PHONE, 10, 20, body),
+        _docx_finding(EntityType.NATIONAL_ID, 15, 25, body),
+        _docx_finding(EntityType.EMAIL, 25, 30, body),
+        _docx_finding(EntityType.EMAIL, 12, 18, header),
+    ]
+    ranges = build_docx_ranges(findings)
+    assert [(r.part_name, r.start, r.end, r.entity_type) for r in ranges] == [
+        (body, 10, 25, EntityType.NATIONAL_ID),
+        (body, 25, 30, EntityType.EMAIL),
+        (header, 12, 18, EntityType.EMAIL),
+    ]
+    assert [len(r.finding_ids) for r in ranges] == [2, 1, 1]
+    assert ranges[0].replacement_label == "[ID]"
+
+
+def test_docx_ranges_ignore_pdf_findings_and_pdf_regions_ignore_docx() -> None:
+    pdf = EntityFinding(
+        FindingId(uuid4()),
+        EntityType.EMAIL,
+        PdfLocation(1, (BoundingBox(0, 0, 10, _H),)),
+        0.9,
+        "test.fixed",
+        "1.0.0",
+        REPLACEMENT_LABELS[EntityType.EMAIL],
+        False,
+    )
+    docx_finding = _docx_finding(EntityType.EMAIL, 0, 5, "word/document.xml")
+    assert build_docx_ranges([pdf]) == ()
+    assert build_regions([docx_finding]) == ()
+
+
+def test_docx_range_invariants() -> None:
+    ident = FindingId(uuid4())
+    with pytest.raises(InvariantError):
+        DocxRedactionRange("docProps/core.xml", 0, 1, EntityType.EMAIL, (ident,))
+    with pytest.raises(InvariantError):
+        DocxRedactionRange("word/document.xml", 3, 3, EntityType.EMAIL, (ident,))
+    with pytest.raises(InvariantError):
+        DocxRedactionRange("word/document.xml", 0, 1, EntityType.EMAIL, (ident, ident))
+    with pytest.raises(InvariantError):
+        DocxRedactionRange("word/document.xml", 0, 1, EntityType.EMAIL, ())
 
 
 def test_build_regions_only_merges_on_the_same_page() -> None:

@@ -22,7 +22,7 @@ then handoff, then **git commit** (D-18).
 | 8 | Candidate and reference names | Complete (committed) |
 | 9 | Span-to-box mapping | Complete (committed) |
 | 10 | Permanent redaction | Complete (committed) |
-| 10b | DOCX redaction | Not started |
+| 10b | DOCX redaction | Complete (committed) |
 | 11 | Independent verification | Not started |
 | 11b | DOCX verification | Not started |
 | 12 | Local job queue | Not started |
@@ -189,6 +189,8 @@ Execute Stage 10b only. Implement DocxRedactor that removes mapped character ran
 ```
 
 Decision D-32 (after Stage 10): hidden content is always removed; there is no approval input.
+
+Stage 10b notes: text is removed by splicing the original XML bytes, so namespace prefixes and every unedited byte stay the same; the editor can only delete or unwrap elements, drop attributes, and replace `w:t` text, so formatting-only redaction cannot be expressed. Outputs are stored as `<uuid>.docx`; the `redacted-<uuid>.docx` download name is applied in Stage 13, as for PDF. Like the PDF redactor, it still takes the `remove_hidden` flag until Stage 12 removes it (D-32). See [stage-handoffs/stage-10b.md](stage-handoffs/stage-10b.md).
 
 Acceptance: No decompressed part of the output contains a redacted string (raw byte search); source hash is unchanged; output opens with an independent OOXML parser; formatting-only redaction is impossible in the implementation.
 

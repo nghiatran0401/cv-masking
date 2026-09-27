@@ -1,22 +1,25 @@
 """Classify and extract text from a DOCX. Text is never logged or stored."""
 
-import unicodedata
 from collections import defaultdict
-from typing import Final, cast
+from typing import Final
 from xml.etree.ElementTree import Element
 
-from defusedxml.common import DTDForbidden, EntitiesForbidden, NotSupportedError
-from defusedxml.ElementTree import fromstring as xml_fromstring
-
 from cv_masking.adapters.docx.archive import DocxArchiveError, read_docx_archive
+from cv_masking.adapters.docx.text import (
+    VANISH,
+    MalformedXmlError,
+    W,
+    parse_xml,
+    text_part_names,
+    walk_part,
+)
 from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentAlert, HiddenContentCategory
-from cv_masking.domain.limits import MAX_DOCX_TEXT_CHARS, MAX_XML_DEPTH
+from cv_masking.domain.limits import MAX_DOCX_TEXT_CHARS
 from cv_masking.ports.extraction import ExtractedDocument, ExtractionResult, TextPart, TextSpan
 
 _OLE_MAGIC: Final = bytes.fromhex("d0cf11e0a1b11ae1")
-W: Final = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 REL: Final = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 _CONTENT_TYPES: Final = "[Content_Types].xml"
 _DOCUMENT: Final = "word/document.xml"
@@ -28,19 +31,7 @@ _MACRO_OR_TEMPLATE: Final = (
     b"vnd.ms-word.template",
 )
 _TRACKED: Final = frozenset({f"{W}ins", f"{W}del", f"{W}moveFrom", f"{W}moveTo"})
-_VANISH: Final = frozenset({f"{W}vanish", f"{W}specVanish"})
-_TEXT_PART_PREFIXES: Final = (
-    "word/document.xml",
-    "word/header",
-    "word/footer",
-    "word/footnotes.xml",
-    "word/endnotes.xml",
-)
 _OPEN_ERRORS: Final = (RuntimeError, ValueError, OSError, LookupError)
-
-
-class _MalformedError(Exception):
-    pass
 
 
 class DocxExtractor:
@@ -61,7 +52,7 @@ class DocxExtractor:
             return ExtractionResult(failure=ErrorCode.DOCX_MACRO_OR_TEMPLATE)
         try:
             return _classify(parts)
-        except _MalformedError:
+        except MalformedXmlError:
             return ExtractionResult(failure=ErrorCode.DOCX_MALFORMED)
         except _OPEN_ERRORS:
             return ExtractionResult(failure=ErrorCode.DOCX_MALFORMED)
@@ -80,8 +71,8 @@ def _classify(parts: dict[str, bytes]) -> ExtractionResult:
     _collect_package_hidden(parts, hidden_parts, hidden_counts)
     extracted: list[TextPart] = []
     total = 0
-    for name in _text_part_names(parts):
-        root = _parse_xml(parts[name])
+    for name in text_part_names(parts):
+        root = parse_xml(parts[name])
         kind = _part_kind(name)
         _collect_xml_hidden(root, kind, hidden_parts, hidden_counts)
         part = _extract_part(name, root)
@@ -98,51 +89,6 @@ def _classify(parts: dict[str, bytes]) -> ExtractionResult:
     return ExtractionResult(
         document=ExtractedDocument(DocumentFormat.DOCX, tuple(extracted), hidden=())
     )
-
-
-def _parse_xml(data: bytes) -> Element:
-    try:
-        root = cast(Element, xml_fromstring(data))
-    except (
-        SyntaxError,
-        ValueError,
-        OSError,
-        DTDForbidden,
-        EntitiesForbidden,
-        NotSupportedError,
-    ) as error:
-        raise _MalformedError from error
-    _bound_depth(root, 0)
-    return root
-
-
-def _bound_depth(element: Element, depth: int) -> None:
-    if depth > MAX_XML_DEPTH:
-        raise _MalformedError
-    for child in list(element):
-        _bound_depth(child, depth + 1)
-
-
-def _text_part_names(parts: dict[str, bytes]) -> tuple[str, ...]:
-    names = [name for name in parts if _is_text_part(name)]
-    return tuple(sorted(names, key=_text_part_order))
-
-
-def _is_text_part(name: str) -> bool:
-    if name.startswith("word/comments"):
-        return False
-    return any(
-        name == prefix or (name.startswith(prefix) and name.endswith(".xml"))
-        for prefix in _TEXT_PART_PREFIXES
-    )
-
-
-def _text_part_order(name: str) -> tuple[int, str]:
-    order = ("word/document.xml", "word/header", "word/footer", "word/footnotes", "word/endnotes")
-    for index, prefix in enumerate(order):
-        if name == prefix or name.startswith(prefix):
-            return (index, name)
-    return (len(order), name)
 
 
 def _part_kind(name: str) -> str:
@@ -193,8 +139,8 @@ def _collect_external_rels(
     hidden_counts: dict[HiddenContentCategory, int],
 ) -> None:
     try:
-        root = _parse_xml(data)
-    except _MalformedError:
+        root = parse_xml(data)
+    except MalformedXmlError:
         return
     for child in root.iter(f"{REL}Relationship"):
         target_mode = (child.get("TargetMode") or "").lower()
@@ -217,7 +163,7 @@ def _collect_xml_hidden(
         if element.tag in _TRACKED:
             hidden_parts[HiddenContentCategory.TRACKED_CHANGES].add(kind)
             hidden_counts[HiddenContentCategory.TRACKED_CHANGES] += 1
-        if element.tag in _VANISH:
+        if element.tag in VANISH:
             hidden_parts[HiddenContentCategory.HIDDEN_TEXT].add(kind)
             hidden_counts[HiddenContentCategory.HIDDEN_TEXT] += 1
         if element.tag == f"{W}altChunk":
@@ -229,47 +175,11 @@ def _collect_xml_hidden(
 
 
 def _extract_part(name: str, root: Element) -> TextPart:
-    pieces: list[str] = []
-    spans: list[TextSpan] = []
-    offset = 0
-    skip_tags = {f"{W}instrText", f"{W}del", f"{W}moveFrom"}
-
-    def visit(element: Element, vanished: bool) -> None:
-        nonlocal offset
-        hidden = vanished or element.tag in _VANISH or _child_has_vanish(element)
-        if element.tag in skip_tags:
-            return
-        if element.tag == f"{W}t" and not hidden:
-            raw = unicodedata.normalize("NFC", "".join(element.itertext()))
-            if raw:
-                pieces.append(raw)
-                spans.append(TextSpan(offset, offset + len(raw), ()))
-                offset += len(raw)
-            return
-        if element.tag == f"{W}tab" and not hidden:
-            pieces.append("\t")
-            offset += 1
-            return
-        if element.tag in {f"{W}br", f"{W}cr"} and not hidden:
-            pieces.append("\n")
-            offset += 1
-            return
-        for child in list(element):
-            visit(child, hidden)
-        if element.tag == f"{W}p" and pieces and not pieces[-1].endswith("\n"):
-            pieces.append("\n")
-            offset += 1
-
-    visit(root, vanished=False)
-    text = unicodedata.normalize("NFC", "".join(pieces).rstrip("\n"))
-    return TextPart(text=text, spans=tuple(spans), part_name=name)
-
-
-def _child_has_vanish(element: Element) -> bool:
-    props = element.find(f"{W}rPr")
-    if props is None:
-        return False
-    return any(child.tag in _VANISH for child in props)
+    walked = walk_part(root)
+    spans = tuple(
+        TextSpan(piece.start, piece.start + len(piece.text), ()) for piece in walked.pieces
+    )
+    return TextPart(text=walked.text, spans=spans, part_name=name)
 
 
 def _alerts(

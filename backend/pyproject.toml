@@ -86,5 +86,6 @@ dev = [
     "mypy>=2.3.1",
     "pytest>=9.1.1",
     "pytest-socket>=0.8.1",
+    "python-docx==1.2.0",
     "ruff>=0.16.9",
 ]

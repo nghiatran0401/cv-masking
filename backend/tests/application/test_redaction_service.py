@@ -5,9 +5,11 @@ import logging
 from pathlib import Path
 
 import pytest
+import synthetic_docx_redaction as docx_fixture
 from synthetic_redaction import EMAIL, NAME, PHONE, all_text, cv_pdf
 
 from cv_masking.adapters.detection import PresidioDetector
+from cv_masking.adapters.docx import DocxExtractor, DocxXmlRedactor
 from cv_masking.adapters.local_storage import LocalInputStore, LocalOutputStore, StorageRoot
 from cv_masking.adapters.pdf import PyMuPDFExtractor, PyMuPDFRedactor
 from cv_masking.application import DetectionOutcome, DetectionService, RedactionService
@@ -63,7 +65,7 @@ def _service(
     input_store: LocalInputStore, output_store: LocalOutputStore, redactor: object = None
 ) -> RedactionService:
     chosen = redactor if redactor is not None else PyMuPDFRedactor()
-    return RedactionService(input_store, output_store, {DocumentFormat.PDF: chosen})  # type: ignore[dict-item]
+    return RedactionService(input_store, output_store, pdf=chosen)  # type: ignore[arg-type]
 
 
 def _entries(root: StorageRoot, kind: str) -> list[str]:
@@ -92,6 +94,33 @@ def test_output_is_a_new_object_and_the_input_hash_is_unchanged(
     leaked = [value in text for value in (NAME, EMAIL, PHONE)]
     assert not any(leaked), f"values leaked: {leaked.count(True)}"
     assert outcome.labelled_regions + outcome.solid_regions == len(_detected(data).regions)
+
+
+def test_docx_output_is_a_new_object_and_the_input_hash_is_unchanged(
+    input_store: LocalInputStore, output_store: LocalOutputStore, root: StorageRoot
+) -> None:
+    data = docx_fixture.cv_docx()
+    source = input_store.save_stream(DocumentFormat.DOCX, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    input_path = root.path / "inputs" / f"{source.ref.value}.docx"
+    before = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    document = DocxExtractor().extract(data).document
+    assert document is not None
+    detection = DetectionService(PresidioDetector()).detect(document, MaskingPolicy())
+    assert detection.docx_ranges
+    service = RedactionService(input_store, output_store, docx=DocxXmlRedactor())
+    outcome = service.redact(source, detection, remove_hidden=False)
+    assert outcome.failure is None
+    assert outcome.output is not None
+    assert outcome.output.ref != source.ref
+    assert hashlib.sha256(input_path.read_bytes()).hexdigest() == before == source.sha256.value
+    output_store.verify(outcome.output)
+    with output_store.open(outcome.output.ref, DocumentFormat.DOCX) as handle:
+        output = handle.read()
+    leaked = [
+        docx_fixture.appears(value, output) for value in (docx_fixture.EMAIL, docx_fixture.PHONE)
+    ]
+    assert not any(leaked), f"values leaked: {leaked.count(True)}"
+    assert outcome.labelled_regions == len(detection.docx_ranges)
 
 
 def test_redactor_failure_is_reported_and_nothing_is_stored(
