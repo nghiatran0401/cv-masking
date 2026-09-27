@@ -175,7 +175,7 @@ Execute Stage 10 only. Implement PdfRedactor using mapped boxes and PyMuPDF reda
 
 Acceptance: Visual overlay alone is impossible in implementation; source hash is unchanged; redacted strings are absent after reopening; document remains renderable.
 
-Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of approved hidden content. Embedded images are kept unchanged (D-13); a test must prove an image outside redaction boxes survives. Per D-29, Stage 10 removes each approved hidden-content category and tests each removal; the approval itself arrives from Stage 12.
+Stage 0 notes: Sanitization list is masking-policy.md §6, including removal of approved hidden content (always removed since D-32). Embedded images are kept unchanged (D-13); a test must prove an image outside redaction boxes survives. Per D-29, Stage 10 removes each approved hidden-content category and tests each removal; the approval itself arrives from Stage 12.
 
 Stage 8 decision (approved): draw one redaction and one label per merged Stage 9 region, never one per overlapping finding, so labels cannot overlap.
 
@@ -187,6 +187,8 @@ Goal: Create secure masked DOCX files.
 ```text
 Execute Stage 10b only. Implement DocxRedactor that removes mapped character ranges from the XML runs and replaces them with policy labels, including every duplicate copy (AlternateContent Choice and Fallback), across all content parts. Apply mandatory policy entities and conditionally salary. Apply the DOCX always-strip list and remove approved hidden content per supported-pdf.md §6. Always write a new file named redacted-<uuid>.docx; preserve namespace prefixes and leave unrelated parts unchanged. Highlighting, shading, font color, or hidden-text formatting must never be used as redaction. Add tests proving redacted strings are absent from every decompressed part after reopening and the source file is unchanged.
 ```
+
+Decision D-32 (after Stage 10): hidden content is always removed; there is no approval input.
 
 Acceptance: No decompressed part of the output contains a redacted string (raw byte search); source hash is unchanged; output opens with an independent OOXML parser; formatting-only redaction is impossible in the implementation.
 
@@ -219,7 +221,11 @@ Execute Stage 12 only. Add a bounded local queue with configurable worker count,
 
 Acceptance: a full 50-file batch (D-30) of lightweight synthetic jobs, plus a second batch queued behind it, runs without one process per job; API stays responsive; retries do not produce inconsistent outputs.
 
-Decision D-29 (approved): Stage 12 also owns the backend of the review flow: approve/deny service and API endpoints for hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run after a hidden-content approval, deleting the output on deny, and reopening a FINISHED batch (D-27). Revisit whether `DETECT_FAILED` should stay retryable when defining what a retry does.
+Decision D-29 (approved, revised by D-32/D-34): Stage 12 also owns the backend of the findings review: approve (keep → `COMPLETED`) and deny (delete → `REJECTED`, output deleted) service and API endpoints. There is no hidden-content approval, no `REVIEW_REQUIRED → QUEUED` re-run, and no reopening of FINISHED batches. Revisit whether `DETECT_FAILED` should stay retryable when defining what a retry does.
+
+Simplifications after Stage 10 (approved; these override the prompt above where they differ):
+- D-33: one background worker process, one document at a time, instead of a configurable pool. The API stays on the event loop; processing never runs there. After a restart, documents left mid-processing become `FAILED` with `JOB_INTERRUPTED` (retryable) instead of resuming. Cancel applies to queued documents only.
+- D-32: remove the hidden-content review path: the Stage 6/6b extractors return the document plus alerts instead of a review, `ReviewKind.HIDDEN_CONTENT` and `hidden_content_approved` go (with a migration), the redactor is always called with removal on, and the alert kinds/counts are stored for status and the report.
 
 Per-document time budget (security review after Stage 9): every job gets a wall-clock limit (supported-pdf.md, "Per-document processing time") that ends in `JOB_TIMEOUT`. The limit must be enforced by terminating the worker process, not by a flag the job checks, because a running regex cannot be interrupted from another thread. Detection is near-linear on the known adversarial shapes (`tests/application/test_detect_timing.py`), but the limit is the backstop for shapes not yet found. For example, text with thousands of ID-shaped hits still costs time quadratic in the hit count inside Presidio's duplicate removal: about 1.4 s at 100k characters and 5 s at 200k. Tests: a detector stub that never returns ends in `JOB_TIMEOUT`, the worker is replaced, and no partial output survives. Because detection is deterministic, decide whether a `JOB_TIMEOUT` retry is useful or should become terminal after one attempt.
 
@@ -232,7 +238,7 @@ Execute Stage 13 only. Build a simple accessible UI with multi-file drag/drop, f
 
 Acceptance: UI handles partial failures; mandatory policies cannot be disabled; ZIP contains no inputs/work files; no third-party assets/network requests.
 
-Stage 0 notes: Accepts PDF and DOCX; downloads keep the input's format; the ZIP may contain both. Needs hidden-content alert (kind/count/page or part) with approve/deny, and review-required approve/deny. Vietnamese and English UI strings (D-03). "Masked, not anonymized" notice. Playwright browser binaries are a dev-time download.
+Stage 0 notes: Accepts PDF and DOCX; downloads keep the input's format; the ZIP may contain both. Shows what hidden content was removed (kind/count/page or part) as information only (D-32), and a review-required keep/delete choice (D-34). Vietnamese and English UI strings (D-03). "Masked, not anonymized" notice. Playwright browser binaries are a dev-time download.
 
 ## Stage 14 — Runtime hardening
 Goal: Protect the local service from network and browser abuse.

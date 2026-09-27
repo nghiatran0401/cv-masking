@@ -33,8 +33,8 @@ laptop and produces permanently redacted copies.
 - Detection of the entity catalogue in [masking-policy.md](masking-policy.md).
 - Permanent redaction using PDF redaction APIs (redaction annotations + apply), never overlays.
 - Independent verification of every output before it can be `COMPLETED`.
-- Hidden-content alerts: documents containing hidden/non-visible content are held for HR
-  review with a description of the *kind* of content found (see [supported-pdf.md](supported-pdf.md) §4).
+- Hidden-content removal: hidden/non-visible content is always removed, and HR sees the
+  *kind* and count of what was removed (D-32; see [supported-pdf.md](supported-pdf.md) §4).
 - Per-document status, safe finding counts (counts per entity type only), individual download,
   masked-only ZIP, and a metadata-only CSV report.
 - Output file naming: `redacted-<uuid>.pdf` for PDF input, `redacted-<uuid>.docx` for DOCX
@@ -71,7 +71,7 @@ laptop and produces permanently redacted copies.
 | D-02 | Mandatory entity list per masking-policy.md §2; salary is an HR-selectable toggle, default **ON** (masked). | Tech lead, Stage 0 |
 | D-03 | Vietnamese is the primary language; English and bilingual CVs are supported. | Tech lead, Stage 0 |
 | D-04 | No image CVs in this phase. | Tech lead, Stage 0 |
-| D-05 | Hidden content → alert HR with kind/count/page of content found; HR approves or denies the CV. On approve, the flagged content is removed from the output (never preserved). | Tech lead, Stage 0 (removal-on-approve is an agent assumption, see Q-02) |
+| D-05 | **Superseded by D-32.** Hidden content → alert HR with kind/count/page of content found; HR approves or denies the CV. On approve, the flagged content is removed from the output (never preserved). | Tech lead, Stage 0 (removal-on-approve is an agent assumption, see Q-02) |
 | D-06 | ~~Retention: outputs kept until HR clears them or 24 h, whichever is first;~~ inputs deleted as soon as the job reaches a terminal state. The 24 h part is superseded by D-23. | Tech lead, Stage 0 |
 | D-07 | Output name `redacted-<uuid>.pdf`; for DOCX input, `redacted-<uuid>.docx`. | Tech lead, Stage 0 (revised) |
 | D-08 | PoC platform is macOS only. Windows gets its own stage later; no current stage carries Windows requirements. | Tech lead, Stage 0 (revised) |
@@ -93,10 +93,14 @@ laptop and produces permanently redacted copies.
 | D-24 | Quitting the app does not erase inputs, outputs, or metadata (answers Q-07). | Tech lead, Stage 3 follow-up |
 | D-25 | Purging a batch deletes its files and then every metadata row about it (batch, documents, hashes, counts, codes); nothing is kept as a tombstone. Job metadata lives in `data/metadata/jobs.sqlite3`. | Tech lead, Stage 4 |
 | D-26 | File/metadata reconciliation (remove files no document needs, and unreferenced files older than 1 h) is built in Stage 4 as a service call; Stage 12 schedules it. | Tech lead, Stage 4 |
-| D-27 | If HR approves a hidden-content review in a FINISHED batch, the batch returns to RUNNING and finishes again once that document is settled. Implemented in Stage 12. | Tech lead, after Stage 4 |
+| D-27 | **Superseded by D-32** (no hidden-content approval exists). If HR approves a hidden-content review in a FINISHED batch, the batch returns to RUNNING and finishes again once that document is settled. Implemented in Stage 12. | Tech lead, after Stage 4 |
 | D-28 | PDF mapping redacts a partly covered word whole (trailing punctuation, a label glued to its value). Accepted for the PoC because it only over-redacts; per-character boxes are not built. Revisit only if Stage 16 evaluation shows it harms usability. | Tech lead, after Stage 9 |
-| D-29 | The hidden-content approve/deny flow is owned per stage: Stage 6/6b detect and alert (done); Stage 10/10b remove each approved category and test the removal; Stage 11/11b verify no category remains; Stage 12 owns the backend (approve/deny service and API endpoints for both hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run, deleting the output on deny, and D-27); Stage 13 owns the screen. Resolves the §6 gap. | Tech lead, after Stage 9 |
+| D-29 | **Revised by D-32/D-34:** the hidden-content approval parts no longer apply; Stage 12 keeps the findings review backend. The hidden-content approve/deny flow is owned per stage: Stage 6/6b detect and alert (done); Stage 10/10b remove each approved category and test the removal; Stage 11/11b verify no category remains; Stage 12 owns the backend (approve/deny service and API endpoints for both hidden-content and findings reviews, the `REVIEW_REQUIRED → QUEUED` re-run, deleting the output on deny, and D-27); Stage 13 owns the screen. Resolves the §6 gap. | Tech lead, after Stage 9 |
 | D-30 | The batch cap is lowered from 100 to 50 files to keep the PoC simple; HR runs several batches for more CVs. The SQLite `document_count` check (0–100, Stage 4 migration) is left as a looser backstop; the domain enforces 50. | Tech lead, after Stage 10 |
+| D-31 | Stage 10 follow-ups: `REDACT_SANITIZE_FAILED` is terminal (every cause is deterministic); PDF tagged structure (`StructTreeRoot`, `MarkInfo`, `StructParent(s)`) and `PieceInfo` are always stripped (they can hold text not on the page; accessibility tags are lost); `MAP_AMBIGUOUS` counts only types the policy redacts; label text is light grey (0.9) on black. | Tech lead, after Stage 10 |
+| D-32 | Hidden content (every PDF §4 and DOCX §6.4 category) is always removed, with no HR approve/deny step. HR sees the kind and count removed in the status and report. Stricter on privacy (nothing hidden is ever kept) and removes the approval flow, the re-run, and reopening finished batches. Stage 12 removes the hidden-content review path from the extractors, domain state machine, and jobs, and always calls the redactor with removal on. Supersedes D-05 and D-27; revises D-29. | Tech lead, after Stage 10 |
+| D-33 | Stage 12 runs one background worker process that handles one document at a time (no worker pool). The per-document time limit is enforced by ending that process. After a crash or restart, documents left mid-processing are marked failed with the retryable `JOB_INTERRUPTED`; HR retries them. Only queued documents can be cancelled. | Tech lead, after Stage 10 |
+| D-34 | Findings review is one step: HR opens the verified masked file and either keeps it (approve → `COMPLETED`) or deletes it (deny → `REJECTED`, output deleted). No re-run and no editing of findings. Verifier `REVIEW_REQUIRED` stays deny-only. | Tech lead, after Stage 10 |
 
 ## 6. Known gaps between approved scope and the stage plan
 

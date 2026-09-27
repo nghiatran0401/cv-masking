@@ -195,15 +195,18 @@ from the synthetic values in `synthetic_redaction.py`.
 - **Viewer-dependent layers are refused, not cleaned.** Some optional-content
   membership dictionaries (e.g. `/P /AllOn` over an OFF layer) are drawn by
   MuPDF but hidden under the PDF rules. The render comparison catches the
-  disagreement and the document fails with `REDACT_SANITIZE_FAILED`. That code
-  is marked retryable, but retrying cannot help (see question 1).
+  disagreement and the document fails with `REDACT_SANITIZE_FAILED`, which is
+  terminal since D-31.
 - **Hidden-text removal is by rectangle.** Visible glyphs overlapping invisible
   text are removed with it, without a black box, so the output may show a gap.
 - **Hidden-layer text that shares a text block with visible text** and moves
   the text position in ways the filter can't keep would change the render, so
   it fails closed rather than shifting visible text.
-- **Not stripped:** tagged-PDF structure (`StructTreeRoot`, which can hold alt
-  text) and `PieceInfo` private data. See question 2.
+- **Inline marked-content properties are not stripped.** Since D-31 the tag tree
+  and `PieceInfo` are removed, but `/ActualText` or `/Alt` written directly in a
+  page's content stream (`/Span <</ActualText (…)>> BDC`) stays. The Stage 11
+  verifier's raw search for source findings in every decoded object is the check
+  for this.
 - **Labels use Helvetica** (ASCII labels only), in a fixed grey on black.
 - **Not wired into the state machine, API, or UI.** Stage 11 adds independent
   verification and Stage 12 the jobs.
@@ -231,6 +234,30 @@ from the synthetic values in `synthetic_redaction.py`.
    limit it to redacted types like the low-confidence flag?
 4. **Label colour.** Grey 0.9 replaces white in masking-policy §5. Please
    confirm.
+
+## Decisions after review
+
+All four answers were accepted as recommended (D-31), and implemented in a
+follow-up commit:
+1. `REDACT_SANITIZE_FAILED` is terminal (`domain/codes.py`, `docs/error-codes.md`).
+2. The redactor always strips `StructTreeRoot`, `MarkInfo`, page `StructParents`,
+   object `StructParent`, and `PieceInfo`, and the output check refuses any that
+   remain. The always-strip test now includes a tag tree whose figure alt text
+   and private data hold a synthetic name, and checks that the name is absent
+   from every decoded object.
+3. `MAP_AMBIGUOUS` counts only the types the policy redacts. A new test in
+   `test_mapping.py` covers overprinted salary with the toggle off and on.
+4. Grey labels are kept.
+
+The tech lead also simplified the plan for the remaining stages:
+- **D-30:** the batch cap goes from 100 to 50 files.
+- **D-32:** hidden content is always removed and reported, with no approve/deny step.
+- **D-33:** Stage 12 uses a single background worker, one document at a time, with
+  simple restart handling.
+- **D-34:** findings review is keep or delete.
+
+The code changes for D-32 land in Stage 12. Until then the redactor keeps its
+`remove_hidden` flag, and the extractors still raise the hidden-content review.
 
 ## Suggested commit message
 

@@ -155,25 +155,26 @@ Synthetic example people used in docs and fixtures: **Nguyễn Văn Mẫu**,
 DOCX equivalents (document properties, thumbnail, field codes, tracked changes,
 comments, hidden text, embedded objects, external relationships) are listed in
 [supported-pdf.md](supported-pdf.md) §6.3–§6.4 and follow the same rule: always strip
-what is pure metadata, and alert HR about hidden content.
+what is pure metadata, and always remove hidden content and report it (D-32).
 
 ### PDF
 
-| Component | Action | Alerts HR? |
+| Component | Action | Shown to HR? |
 |---|---|---|
 | Document info dictionary and XMP metadata (author, title, subject, keywords, producer) | Always stripped and replaced with neutral values | No |
 | Link annotations and URI actions | Always removed (URIs can hold emails/profiles) | No |
 | Outlines/bookmarks, page thumbnails, page labels | Always removed | No |
+| Tagged-PDF structure (alt text, `StructTreeRoot`, `MarkInfo`) and application private data (`PieceInfo`) | Always removed (D-31); accessibility tags are lost | No |
 | Incremental-update history / previous revisions | Output is fully rewritten (garbage-collected, non-incremental save) | No |
 | Embedded raster images (including candidate photos) | Kept unchanged; no OCR, no face detection (D-13). Text inside images is not detected. | No |
-| Embedded files / attachments / portfolios | Held for review; removed on approve | **Yes** |
-| AcroForm fields / XFA forms | Held for review; fields removed on approve (widget values are lost) | **Yes** |
-| JavaScript, OpenAction, Launch, and other active actions | Held for review; removed on approve | **Yes** |
-| Comment/markup annotations (text notes, highlights, free text, stamps) | Held for review; removed on approve | **Yes** |
-| Optional content groups (hidden layers) | Held for review; hidden-layer content removed on approve | **Yes** |
-| Invisible text (render mode 3), text outside the crop box, white-on-white or sub-2 pt text | Held for review; removed on approve | **Yes** |
+| Embedded files / attachments / portfolios | Always removed (D-32) | Reported |
+| AcroForm fields / XFA forms | Always removed; widget values are lost (D-32) | Reported |
+| JavaScript, OpenAction, Launch, and other active actions | Always removed (D-32) | Reported |
+| Comment/markup annotations (text notes, highlights, free text, stamps) | Always removed (D-32) | Reported |
+| Optional content groups (hidden layers) | Hidden-layer content always removed (D-32) | Reported |
+| Invisible text (render mode 3, zero opacity), text outside the crop box, white-on-white or sub-2 pt text | Always removed (D-32) | Reported |
 
-PDF removal on approve (Stage 10) is fail-closed:
+PDF hidden-content removal (Stage 10) is fail-closed:
 - Hidden-layer content is cut from the page and form content streams. Each page is
   rendered before and after, and any difference refuses the output
   (`REDACT_SANITIZE_FAILED`). This includes layers whose visibility PDF viewers disagree

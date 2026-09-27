@@ -12,6 +12,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 from synthetic_redaction import (
+    ALT_TEXT,
     AUTHOR,
     EMAIL,
     HIDDEN,
@@ -160,10 +161,15 @@ def test_always_stripped_components_are_removed_without_approval() -> None:
         page = document[0]
         assert page.get_links() == []
         assert document.xref_get_key(page.xref, "Thumb")[0] == "null"
+        catalog = document.pdf_catalog()
+        for key in ("StructTreeRoot", "MarkInfo"):
+            assert document.xref_get_key(catalog, key)[0] == "null", key
+        for key in ("StructParents", "PieceInfo"):
+            assert document.xref_get_key(page.xref, key)[0] == "null", key
     finally:
         document.close()
     raw = _every_decoded_object(result.output)
-    for index, value in enumerate((AUTHOR, f"mailto:{EMAIL}", EMAIL)):
+    for index, value in enumerate((AUTHOR, ALT_TEXT, f"mailto:{EMAIL}", EMAIL)):
         leaked = value.encode() in raw
         assert not leaked, f"stripped value {index} still in the file"
 

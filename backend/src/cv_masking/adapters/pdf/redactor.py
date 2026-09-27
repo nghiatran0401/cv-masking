@@ -47,18 +47,27 @@ _LABEL_GREY: Final = (0.9, 0.9, 0.9)
 _LABELS: Final = frozenset(REPLACEMENT_LABELS.values())
 _ACTION_TYPES: Final = frozenset({"/JavaScript", "/Launch", "/SubmitForm", "/ImportData"})
 _STALE_PAGE_MODES: Final = frozenset({"/UseOutlines", "/UseThumbs", "/UseOC", "/UseAttachments"})
+_CATALOG_STRIPPED: Final = ("Outlines", "PageLabels", "Metadata", "StructTreeRoot", "MarkInfo")
+_PAGE_STRIPPED: Final = ("Thumb", "StructParents")
+_OBJECT_STRIPPED: Final = ("Metadata", "PieceInfo", "StructParent")
+"""Tagged-structure alt text and application private data can hold text not on the page."""
 _DROPPED_KEYS: Final = (
     "AA",
     "AcroForm",
     "Collection",
     "EmbeddedFiles",
     "JavaScript",
+    "MarkInfo",
     "Metadata",
     "OCProperties",
     "OpenAction",
     "Outlines",
     "PageLabels",
     "PageMode",
+    "PieceInfo",
+    "StructParent",
+    "StructParents",
+    "StructTreeRoot",
     "Thumb",
 )
 _NULL_ENTRY_RE: Final = re.compile(rf"/(?:{'|'.join(_DROPPED_KEYS)})\s+null\b")
@@ -238,23 +247,25 @@ def _rect(item: BoundingBox) -> pymupdf.Rect:
 
 
 def _strip_always(document: pymupdf.Document) -> None:
-    """masking-policy.md §6: metadata, XMP, links, outlines, thumbnails, page labels."""
+    """masking-policy.md §6: metadata, XMP, links, outlines, thumbnails, page labels, tags."""
     document.set_metadata({})
     document.del_xml_metadata()
     document.set_toc([])
     catalog = document.pdf_catalog()
-    for key in ("Outlines", "PageLabels", "Metadata"):
+    for key in _CATALOG_STRIPPED:
         document.xref_set_key(catalog, key, "null")
     if document.xref_get_key(catalog, "PageMode")[1] in _STALE_PAGE_MODES:
         document.xref_set_key(catalog, "PageMode", "null")
     for xref in range(1, document.xref_length()):
-        if document.xref_get_key(xref, "Metadata")[0] != "null":
-            document.xref_set_key(xref, "Metadata", "null")
+        for key in _OBJECT_STRIPPED:
+            if document.xref_get_key(xref, key)[0] != "null":
+                document.xref_set_key(xref, key, "null")
     for index in range(document.page_count):
         page = document.load_page(index)
         for link in page.get_links():
             page.delete_link(link)
-        document.xref_set_key(page.xref, "Thumb", "null")
+        for key in _PAGE_STRIPPED:
+            document.xref_set_key(page.xref, key, "null")
 
 
 def _drop_null_entries(document: pymupdf.Document) -> None:
@@ -497,14 +508,16 @@ def _has_stripped_residue(document: pymupdf.Document) -> bool:
     if document.get_xml_metadata() or document.get_toc():
         return True
     catalog = document.pdf_catalog()
-    if any(
-        document.xref_get_key(catalog, key)[0] != "null"
-        for key in ("Outlines", "PageLabels", "Metadata")
-    ):
+    if any(document.xref_get_key(catalog, key)[0] != "null" for key in _CATALOG_STRIPPED):
         return True
+    for xref in range(1, document.xref_length()):
+        if any(document.xref_get_key(xref, key)[0] != "null" for key in _OBJECT_STRIPPED):
+            return True
     for index in range(document.page_count):
         page = document.load_page(index)
-        if page.get_links() or document.xref_get_key(page.xref, "Thumb")[0] != "null":
+        if page.get_links() or any(
+            document.xref_get_key(page.xref, key)[0] != "null" for key in _PAGE_STRIPPED
+        ):
             return True
     return False
 

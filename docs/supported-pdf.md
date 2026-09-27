@@ -45,7 +45,7 @@ A PDF is **supported** when all of the following hold:
 4. Every page has an extractable text layer (at least a minimum number of
    extractable characters per page, set in Stage 6), with valid Unicode mapping for the text
    (no missing ToUnicode on the fonts used for body text).
-5. It contains no hidden content from §4, or HR has approved the hidden-content alert.
+5. Hidden content from §4 does not stop processing: it is always removed and reported (D-32).
 
 | Condition | Resulting state | Code | HR actions |
 |---|---|---|---|
@@ -55,11 +55,12 @@ A PDF is **supported** when all of the following hold:
 | Too many pages | `REVIEW_REQUIRED` | `PDF_TOO_MANY_PAGES` | Delete |
 | Any page without a text layer (image-only / scanned) | `REVIEW_REQUIRED` | `PDF_NO_TEXT_LAYER` | Delete. No output is produced. |
 | Unmappable glyphs (text cannot be reliably extracted) | `REVIEW_REQUIRED` | `PDF_TEXT_UNRELIABLE` | Delete |
-| Hidden content (§4) | `REVIEW_REQUIRED` | `PDF_HIDDEN_CONTENT` | **Approve** (continue; content removed) or **Deny** |
+| Hidden content (§4) | Processing continues (D-32) | Reported as an alert, not a state | None; the report shows kind and count |
 
 `REVIEW_REQUIRED` for encryption, page count, image-only, and unreliable text is
 **not approvable**: approving would produce an output the verifier cannot vouch
-for. Only `PDF_HIDDEN_CONTENT` and low-confidence findings can be approved.
+for. Only findings reviews (low confidence, no candidate name, ambiguous mapping) can
+be approved (D-34).
 
 ## 4. Hidden content
 
@@ -77,12 +78,13 @@ but that can be extracted or executed:
 The alert payload contains only: category, count, and page numbers. It never
 contains the hidden text, annotation contents, attachment names, or script source.
 
-On **approve**, all flagged hidden content is removed from the output, the
-document goes through normal detection/redaction, and the verifier checks that none of
-the flagged categories remain. On **deny**, the job becomes `REJECTED` and its files are
-deleted per [data-retention.md](data-retention.md).
+All hidden content is **always removed** from the output (D-32); HR is not asked. The
+document goes through normal detection/redaction, the verifier checks that no category
+remains, and the per-document status and report show what was removed. If removal
+cannot be done safely the document fails with `REDACT_SANITIZE_FAILED`. Until Stage 12
+rewires the jobs, the Stage 6/6b extractors still return the older hidden-content review.
 
-Always-stripped components (metadata, links, outlines, thumbnails) are removed
+Always-stripped components (metadata, links, outlines, thumbnails, tagged structure) are removed
 without alerting; see [masking-policy.md](masking-policy.md) §6. Embedded images are
 kept unchanged in the PoC (D-13) and are not treated as hidden content.
 
@@ -134,9 +136,9 @@ and the displayed result of fields.
 | Attached template path and document variables (`settings.xml`) | Paths can contain the OS user name. |
 | Revision-session ids (`rsid*`) | Linkable metadata. |
 
-### 6.4 Hidden content (alert HR, approve or deny)
+### 6.4 Hidden content (always removed and reported, D-32)
 
-| Category | On approve |
+| Category | Removal |
 |---|---|
 | Tracked changes (`w:ins`, `w:del`, moves, formatting changes) | All changes are accepted: deleted text is dropped, inserted text is kept and scanned. |
 | Comments (`comments*.xml` and anchors) | Removed. |
@@ -148,7 +150,7 @@ and the displayed result of fields.
 | External relationships other than hyperlinks (linked images, linked OLE, remote template, `INCLUDETEXT`/`INCLUDEPICTURE`) | Removed. These could make Word fetch a remote resource when HR opens the output. |
 
 The alert shows only category, count, and (for DOCX) the part type, such as
-"header" or "footnotes", never the content. On **deny** the job becomes `REJECTED`.
+"header" or "footnotes", never the content.
 
 ### 6.5 Fixture matrix (Stage 6b)
 

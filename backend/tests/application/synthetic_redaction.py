@@ -20,6 +20,7 @@ AFTER_TARGET = "Echo Foxtrot"
 BELOW = "Golf Hotel India"
 HIDDEN = "Hidden synthetic secret"
 AUTHOR = "Jane Example"
+ALT_TEXT = "John Sample"
 BODY = "Kinh nghiệm làm việc tại Example Bank Ltd với Python và SQL"
 
 
@@ -76,7 +77,26 @@ def with_always_stripped(data: bytes) -> bytes:
     )
     document.update_stream(thumb, b"\x80")
     document.xref_set_key(page.xref, "Thumb", f"{thumb} 0 R")
+    _tagged(document, page)
     return _bytes(document)
+
+
+def _tagged(document: pymupdf.Document, page: pymupdf.Page) -> None:
+    """A structure tree with figure alt text, and application private data."""
+    root = document.get_new_xref()
+    element = document.get_new_xref()
+    document.update_object(root, f"<< /Type /StructTreeRoot /K {element} 0 R >>")
+    document.update_object(
+        element,
+        f"<< /Type /StructElem /S /Figure /P {root} 0 R /Pg {page.xref} 0 R /Alt ({ALT_TEXT}) >>",
+    )
+    catalog = document.pdf_catalog()
+    document.xref_set_key(catalog, "StructTreeRoot", f"{root} 0 R")
+    document.xref_set_key(catalog, "MarkInfo", "<< /Marked true >>")
+    document.xref_set_key(page.xref, "StructParents", "0")
+    document.xref_set_key(
+        page.xref, "PieceInfo", f"<< /SyntheticApp << /Private ({ALT_TEXT}) >> >>"
+    )
 
 
 def _annotations(document: pymupdf.Document) -> None:

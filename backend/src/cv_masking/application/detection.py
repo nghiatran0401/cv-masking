@@ -79,7 +79,8 @@ class DetectionService:
         """Find and place entities.
 
         Salary findings are always returned and counted. Regions, and the
-        low-confidence review, cover only the types the policy redacts.
+        low-confidence and ambiguous-mapping reviews, cover only the types the
+        policy redacts.
         """
         try:
             raw = self._detector.detect(document)
@@ -95,7 +96,7 @@ class DetectionService:
                 logger.info("mapping failed matches=%d", len(kept))
                 return DetectionOutcome((), (), suppressed, frozenset(), ErrorCode.MAP_FAILED)
             locations, is_ambiguous = placed
-            ambiguous += int(is_ambiguous)
+            ambiguous += int(is_ambiguous and match.entity_type in policy.redacted_types)
             findings.extend(_finding(match, location) for location in locations)
         redacted = [item for item in findings if item.entity_type in policy.redacted_types]
         review: set[ReviewReason] = set()

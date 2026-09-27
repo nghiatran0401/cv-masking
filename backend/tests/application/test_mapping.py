@@ -213,6 +213,15 @@ def test_overprinted_word_is_ambiguous_and_both_boxes_redacted() -> None:
     assert outcome.failure is None
 
 
+def test_overprinted_salary_is_not_ambiguous_when_salary_is_not_redacted() -> None:
+    document = page((("20tr", 0, 0, 30, _H), ("20tr", 0.5, 0.2, 30.5, _H)))
+    salary = _match(EntityType.SALARY, (0, 4))
+    unmasked = DetectionService(_Fixed(salary)).detect(document, MaskingPolicy(mask_salary=False))
+    masked = DetectionService(_Fixed(salary)).detect(document, MaskingPolicy(mask_salary=True))
+    assert ReviewReason.MAP_AMBIGUOUS not in unmasked.review
+    assert ReviewReason.MAP_AMBIGUOUS in masked.review
+
+
 def test_duplicate_occurrences_map_to_their_own_boxes() -> None:
     document = page(
         _row(0, ("Email:", 0, 30), (EMAIL, 35, 140)),

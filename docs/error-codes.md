@@ -83,6 +83,12 @@ A job is approvable only when **all** its reasons are hidden_content, or
 **all** are findings (with verification PASSED). Any blocking or verifier reason
 makes the job deny-only.
 
+**Planned change (D-32, D-34; implemented in Stage 12):** the two hidden_content
+reasons stop being review reasons. Hidden content is always removed and reported as
+an alert, so the `REVIEW_REQUIRED → QUEUED` transition goes away. Findings review
+becomes keep (approve → `COMPLETED`) or delete (deny → `REJECTED`). The diagram and
+this table are updated with the code in Stage 12.
+
 Batch states: `OPEN` (accepting uploads; salary toggle editable) → `RUNNING`
 (toggle locked) → `FINISHED` (all documents terminal or `REVIEW_REQUIRED`).
 `PURGED` is reachable from any state.
@@ -153,7 +159,7 @@ validation reasons.
 | Code | R/T | Meaning |
 |---|---|---|
 | `REDACT_FAILED` | R | Redaction could not be applied. |
-| `REDACT_SANITIZE_FAILED` | R | Metadata/hidden-content removal failed. |
+| `REDACT_SANITIZE_FAILED` | T | Metadata/hidden-content removal failed (deterministic, D-31). |
 | `REDACT_OUTPUT_WRITE_FAILED` | R | Output could not be written atomically. |
 
 ### Verification (Stages 11, 11b)
