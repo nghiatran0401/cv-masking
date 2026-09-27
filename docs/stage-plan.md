@@ -21,7 +21,7 @@ then handoff, then **git commit** (D-18).
 | 7 | Deterministic detectors | Complete (committed) |
 | 8 | Candidate and reference names | Complete (committed) |
 | 9 | Span-to-box mapping | Complete (committed) |
-| 10 | Permanent redaction | Not started |
+| 10 | Permanent redaction | Complete (committed) |
 | 10b | DOCX redaction | Not started |
 | 11 | Independent verification | Not started |
 | 11b | DOCX verification | Not started |

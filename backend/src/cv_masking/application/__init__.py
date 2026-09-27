@@ -3,6 +3,7 @@
 from cv_masking.application.detection import DetectionOutcome, DetectionService
 from cv_masking.application.identify import IdentifiedKind, identify_file
 from cv_masking.application.jobs import ORPHAN_GRACE, JobService, ReconcileReport, Transition
+from cv_masking.application.redaction import RedactionOutcome, RedactionService
 from cv_masking.application.uploads import UploadError, UploadLimits, UploadService
 from cv_masking.application.validation import ValidationOutcome, ValidationService
 
@@ -13,6 +14,8 @@ __all__ = [
     "IdentifiedKind",
     "JobService",
     "ReconcileReport",
+    "RedactionOutcome",
+    "RedactionService",
     "Transition",
     "UploadError",
     "UploadLimits",

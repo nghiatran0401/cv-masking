@@ -138,7 +138,13 @@ Synthetic example people used in docs and fixtures: **Nguyễn Văn Mẫu**,
   merge into one box only when no unrelated word lies inside the merged box.
 - PDF: a label is drawn only if it fits inside the redaction box at ≥ 6 pt using a built-in
   font (labels are ASCII). Otherwise the box is filled solid black with no label.
-  Redaction fill is black; label text is white.
+  Redaction fill is black; label text is light grey (0.9), not pure white, because the
+  hidden-content scan treats white text as invisible. A region that spans several lines
+  gets one label, in its box with the largest fitting size; its other boxes are solid.
+- PDF redaction rectangles are trimmed vertically so they stop 0.25 pt short of words on
+  the lines directly above and below; PyMuPDF removes every glyph a rectangle touches.
+- When the salary toggle is OFF, salary findings are still reported but produce no
+  redaction region, and they do not count towards low-confidence review.
 - DOCX: the label always replaces the text, in the formatting of the first redacted run.
   Every duplicate copy of the text (e.g. text-box fallback) gets the same replacement.
 - Field **labels** (e.g. "Giới tính:") remain; only values are redacted, except
@@ -166,6 +172,16 @@ what is pure metadata, and alert HR about hidden content.
 | Comment/markup annotations (text notes, highlights, free text, stamps) | Held for review; removed on approve | **Yes** |
 | Optional content groups (hidden layers) | Held for review; hidden-layer content removed on approve | **Yes** |
 | Invisible text (render mode 3), text outside the crop box, white-on-white or sub-2 pt text | Held for review; removed on approve | **Yes** |
+
+PDF removal on approve (Stage 10) is fail-closed:
+- Hidden-layer content is cut from the page and form content streams. Each page is
+  rendered before and after, and any difference refuses the output
+  (`REDACT_SANITIZE_FAILED`). This includes layers whose visibility PDF viewers disagree
+  on, such as some membership dictionaries MuPDF draws but the PDF rules hide.
+- Invisible, off-crop, white, or tiny text is removed with fill-less redaction
+  annotations, so visible glyphs that overlap it are removed too.
+- The output is reopened and scanned again; any remaining hidden content, stripped
+  catalogue entry, redaction annotation, or text inside a redacted region refuses it.
 
 The hidden-content alert shows only the **kind**, **count**, and **page numbers**
 of what was found (for example "2 comment annotations on pages 1, 3; 1 attachment"), never

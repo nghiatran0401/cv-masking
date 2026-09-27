@@ -76,8 +76,11 @@ class DetectionService:
         self._detector = detector
 
     def detect(self, document: ExtractedDocument, policy: MaskingPolicy) -> DetectionOutcome:
-        """Find and place entities. Salary is always returned; policy does not hide it."""
-        del policy
+        """Find and place entities.
+
+        Salary findings are always returned and counted. Regions, and the
+        low-confidence review, cover only the types the policy redacts.
+        """
         try:
             raw = self._detector.detect(document)
         except (RuntimeError, ValueError, TypeError, OSError):
@@ -94,14 +97,15 @@ class DetectionService:
             locations, is_ambiguous = placed
             ambiguous += int(is_ambiguous)
             findings.extend(_finding(match, location) for location in locations)
+        redacted = [item for item in findings if item.entity_type in policy.redacted_types]
         review: set[ReviewReason] = set()
-        if any(item.requires_review for item in findings):
+        if any(item.requires_review for item in redacted):
             review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
         if not any(item.entity_type is EntityType.CANDIDATE_NAME for item in findings):
             review.add(ReviewReason.DETECT_NO_CANDIDATE_NAME)
         if ambiguous:
             review.add(ReviewReason.MAP_AMBIGUOUS)
-        regions = build_regions(findings)
+        regions = build_regions(redacted)
         logger.info(
             "detection findings=%d suppressed=%d ambiguous=%d regions=%d review=%d",
             len(findings),
