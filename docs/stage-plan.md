@@ -18,7 +18,7 @@ then handoff, then **git commit** (D-18).
 | 5 | Batch upload API | Complete (committed) |
 | 6 | PDF validation and extraction | Complete (committed) |
 | 6b | DOCX validation and extraction | Complete (committed) |
-| 7 | Deterministic detectors | Not started |
+| 7 | Deterministic detectors | Complete (committed) |
 | 8 | Candidate and reference names | Not started |
 | 9 | Span-to-box mapping | Not started |
 | 10 | Permanent redaction | Not started |

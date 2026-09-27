@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "defusedxml==0.7.1",
     "fastapi>=0.141.1",
+    "presidio-analyzer==2.2.364",
     "pymupdf==1.28.2",
     "python-multipart>=0.0.32",
     "uvicorn>=0.53.0",
@@ -55,7 +56,16 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["fitz", "fitz.*", "pymupdf", "pymupdf.*", "defusedxml", "defusedxml.*"]
+module = [
+    "fitz",
+    "fitz.*",
+    "pymupdf",
+    "pymupdf.*",
+    "defusedxml",
+    "defusedxml.*",
+    "presidio_analyzer",
+    "presidio_analyzer.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

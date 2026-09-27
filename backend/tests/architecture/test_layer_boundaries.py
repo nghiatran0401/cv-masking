@@ -46,6 +46,17 @@ def test_adapters_do_not_depend_on_the_api_or_application_layers() -> None:
             assert not module.startswith(("cv_masking.api", "cv_masking.application")), module
 
 
+def test_detection_adapter_does_not_import_format_adapters() -> None:
+    paths = sorted((SRC / "adapters" / "detection").rglob("*.py"))
+    assert paths
+    for path in paths:
+        for module in _imports(path):
+            assert not module.startswith(("cv_masking.adapters.pdf", "cv_masking.adapters.docx")), (
+                path.name,
+                module,
+            )
+
+
 def test_only_the_sqlite_adapter_imports_sqlite() -> None:
     for path in SRC.rglob("*.py"):
         if "sqlite3" in _imports(path):
