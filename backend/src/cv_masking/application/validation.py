@@ -1,6 +1,7 @@
-"""Validate an uploaded PDF and extract a transient text model."""
+"""Validate an uploaded document and extract a transient text model."""
 
 import logging
+from collections.abc import Mapping
 
 from cv_masking.application.jobs import JobService
 from cv_masking.domain.codes import ErrorCode
@@ -30,30 +31,36 @@ class ValidationOutcome:
 
 
 class ValidationService:
-    __slots__ = ("_extractor", "_inputs", "_jobs")
+    __slots__ = ("_extractors", "_inputs", "_jobs")
 
-    def __init__(self, jobs: JobService, inputs: ObjectStore, extractor: DocumentExtractor) -> None:
+    def __init__(
+        self,
+        jobs: JobService,
+        inputs: ObjectStore,
+        extractors: Mapping[DocumentFormat, DocumentExtractor],
+    ) -> None:
         self._jobs = jobs
         self._inputs = inputs
-        self._extractor = extractor
+        self._extractors = dict(extractors)
 
     def validate(self, document_id: DocumentId) -> ValidationOutcome:
-        """UPLOADED PDF → QUEUED, REVIEW_REQUIRED, or FAILED. Text is never stored."""
+        """UPLOADED → QUEUED, REVIEW_REQUIRED, or FAILED. Text is never stored."""
         job = self._jobs.get_document(document_id)
-        if job.document_format is not DocumentFormat.PDF:
-            raise InvariantError("PDF validation cannot run on this document format")
+        if job.document_format is None or job.document_format not in self._extractors:
+            raise InvariantError("validation has no extractor for this document format")
         if job.input_ref is None or job.state is not DocumentState.UPLOADED:
-            raise InvariantError("PDF validation needs an uploaded document")
+            raise InvariantError("validation needs an uploaded document")
+        extractor = self._extractors[job.document_format]
         self._jobs.apply(document_id, lambda current, at: current.start_validation(at))
         try:
-            with self._inputs.open(job.input_ref, DocumentFormat.PDF) as handle:
+            with self._inputs.open(job.input_ref, job.document_format) as handle:
                 data = handle.read()
         except StorageError as error:
             code = error.code
             failed = self._jobs.apply(document_id, lambda current, at: current.fail(code, at))
             logger.info("document %s validation failed", document_id)
             return ValidationOutcome(failed, None, ())
-        result = self._extractor.extract(data)
+        result = extractor.extract(data)
         if result.failure is not None:
             code = result.failure
             failed = self._jobs.apply(document_id, lambda current, at: current.fail(code, at))

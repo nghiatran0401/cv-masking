@@ -5,6 +5,7 @@ description = "Localhost-only CV PII masking proof of concept"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "defusedxml==0.7.1",
     "fastapi>=0.141.1",
     "pymupdf==1.28.2",
     "python-multipart>=0.0.32",
@@ -54,7 +55,7 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["fitz", "fitz.*", "pymupdf", "pymupdf.*"]
+module = ["fitz", "fitz.*", "pymupdf", "pymupdf.*", "defusedxml", "defusedxml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

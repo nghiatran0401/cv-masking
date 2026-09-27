@@ -21,12 +21,12 @@ from synthetic_pdfs import (
     supported_layouts_pdf,
 )
 
+from cv_masking.adapters.docx import DocxExtractor
 from cv_masking.adapters.local_storage import LocalInputStore
 from cv_masking.adapters.pdf import PyMuPDFExtractor
 from cv_masking.application import JobService, ValidationService
 from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.document_job import DocumentState
-from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentCategory
 from cv_masking.ports.extraction import ExtractionResult
@@ -41,7 +41,11 @@ def extractor() -> PyMuPDFExtractor:
 def validation(
     service: JobService, input_store: LocalInputStore, extractor: PyMuPDFExtractor
 ) -> ValidationService:
-    return ValidationService(service, input_store, extractor)
+    return ValidationService(
+        service,
+        input_store,
+        {DocumentFormat.PDF: extractor, DocumentFormat.DOCX: DocxExtractor()},
+    )
 
 
 def _combined(result: ExtractionResult) -> str:
@@ -140,13 +144,14 @@ def test_validate_fails_a_malformed_pdf(
     assert outcome.extracted is None
 
 
-def test_validate_does_not_run_on_docx(
+def test_validate_queues_a_simple_docx(
     service: JobService, input_store: LocalInputStore, validation: ValidationService
 ) -> None:
     batch = service.create_batch()
     job = uploaded_document(
         service, input_store, batch.batch_id, DocumentFormat.DOCX, synthetic_docx()
     )
-    with pytest.raises(InvariantError):
-        validation.validate(job.document_id)
-    assert service.get_document(job.document_id).state is DocumentState.UPLOADED
+    outcome = validation.validate(job.document_id)
+    assert outcome.job.state is DocumentState.QUEUED
+    assert outcome.extracted is not None
+    assert "synthetic" in "\n".join(part.text for part in outcome.extracted.parts)

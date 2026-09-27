@@ -100,7 +100,7 @@ synthetic text at test time or committed as `synthetic-*.pdf`.
 
 A DOCX is a ZIP archive of XML parts; it is untrusted input at both layers.
 
-| Check | Default (proposed, finalized in Stage 6b/14) | Code |
+| Check | Default (finalized in Stage 6b; Stage 14 may tighten) | Code |
 |---|---|---|
 | File size (compressed) | 20 MB (same as PDF) | `UPLOAD_FILE_TOO_LARGE` |
 | Total uncompressed size | 100 MB | `DOCX_RESOURCE_LIMIT` |
