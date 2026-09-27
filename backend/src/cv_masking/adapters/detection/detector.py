@@ -1,17 +1,27 @@
 """Presidio pattern recognizers plus labeled-field rules. No spaCy models, no network."""
 
 import re
-from dataclasses import dataclass
 from typing import Final
 
 from presidio_analyzer import Pattern, PatternRecognizer
 
+from cv_masking.adapters.detection.context import contact_address_hits, family_hits
+from cv_masking.adapters.detection.hits import Hit, resolve
+from cv_masking.adapters.detection.names import (
+    NameAnchor,
+    email_tokens,
+    header_candidate,
+    label_names,
+    reference_line_names,
+    repeat_hits,
+)
 from cv_masking.adapters.detection.normalize import fold_with_map, original_span
+from cv_masking.adapters.detection.sections import PartView, SectionKind, build_view
 from cv_masking.domain.policy import EntityType
 from cv_masking.ports.detection import DetectionResult, TextMatch
 from cv_masking.ports.extraction import ExtractedDocument, TextPart
 
-DETECTOR_VERSION: Final = "1.0.0"
+DETECTOR_VERSION: Final = "1.1.0"
 _CONTEXT_WINDOW: Final = 48
 _HIGH: Final = 0.92
 _CONTEXT: Final = 0.88
@@ -91,24 +101,6 @@ _CONTACT_LABELS: Final = (
     "skype",
     "telegram",
 )
-_REF_HEADINGS: Final = (
-    "nguoi tham chieu",
-    "nguoi tham khao",
-    "nguoi gioi thieu",
-    "thong tin tham chieu",
-    "references",
-    "referees",
-)
-_OTHER_HEADINGS: Final = (
-    "kinh nghiem",
-    "hoc van",
-    "ky nang",
-    "experience",
-    "education",
-    "skills",
-    "work history",
-    "projects",
-)
 _FIELD_LABELS: Final = (
     (EntityType.GENDER, ("gioi tinh", "gender", "sex")),
     (EntityType.MARITAL_STATUS, ("tinh trang hon nhan", "hon nhan", "marital status")),
@@ -138,17 +130,11 @@ _FIELD_LABELS: Final = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class _Hit:
-    entity_type: EntityType
-    start: int
-    end: int
-    confidence: float
-    detector_id: str
-
-
 class PresidioDetector:
-    """Stage 7 detector. Uses Presidio PatternRecognizer only; no NLP engine."""
+    """Presidio PatternRecognizer rules plus explainable name/section heuristics.
+
+    No NLP engine, no model files, no network.
+    """
 
     def __init__(self) -> None:
         self._patterns = (
@@ -173,36 +159,69 @@ class PresidioDetector:
         )
 
     def detect(self, document: ExtractedDocument) -> DetectionResult:
+        views = tuple(build_view(part) for part in document.parts)
+        emails = email_tokens(views)
+        per_part: list[list[Hit]] = [_field_hits(view.part, self._patterns) for view in views]
+        anchors: list[NameAnchor] = []
+        for index, view in enumerate(views):
+            labeled, references = label_names(view, index)
+            anchors.extend(labeled)
+            per_part[index].extend(references)
+            per_part[index].extend(reference_line_names(view))
+            per_part[index].extend(family_hits(view))
+            if view.is_contact_part:
+                per_part[index].extend(contact_address_hits(view))
+        header = _best_header(views, emails, anchors)
+        if header is not None:
+            anchors.append(header)
+        for anchor in anchors:
+            per_part[anchor.part_index].append(anchor.hit())
         matches: list[TextMatch] = []
-        for part in document.parts:
-            matches.extend(_matches_for_part(part, self._patterns))
+        for index, view in enumerate(views):
+            per_part[index].extend(repeat_hits(view, index, anchors))
+            refs = view.ranges(SectionKind.REFERENCE)
+            matches.extend(_to_match(hit, view.part, refs) for hit in resolve(per_part[index]))
         return DetectionResult(tuple(matches))
 
 
-def _matches_for_part(part: TextPart, patterns: tuple[PatternRecognizer, ...]) -> list[TextMatch]:
+def _best_header(
+    views: tuple[PartView, ...], emails: frozenset[str], anchors: list[NameAnchor]
+) -> NameAnchor | None:
+    labeled = {anchor.folded_tokens for anchor in anchors}
+    best: NameAnchor | None = None
+    for index, view in enumerate(views):
+        if not view.is_contact_part:
+            continue
+        candidate = header_candidate(view, index, emails)
+        if candidate is None or candidate.folded_tokens in labeled:
+            continue
+        if best is None or candidate.confidence > best.confidence:
+            best = candidate
+    return best
+
+
+def _field_hits(part: TextPart, patterns: tuple[PatternRecognizer, ...]) -> list[Hit]:
     text = part.text
     if not text:
         return []
     folded, mapping, orig_to_fold = fold_with_map(text)
-    refs = _reference_ranges(folded, mapping, len(text))
     hits = _pattern_hits(text, patterns)
     hits.extend(_context_digits(text, folded, mapping, orig_to_fold))
     hits.extend(_labeled_fields(text, folded, mapping, orig_to_fold))
     hits.extend(_age_hits(text))
     hits.extend(_salary_hits(text, folded, mapping, orig_to_fold))
     hits.extend(_url_hits(text, folded, mapping, orig_to_fold))
-    hits = _resolve(hits)
-    return [_to_match(hit, part, refs) for hit in hits]
+    return hits
 
 
-def _pattern_hits(text: str, patterns: tuple[PatternRecognizer, ...]) -> list[_Hit]:
-    hits: list[_Hit] = []
+def _pattern_hits(text: str, patterns: tuple[PatternRecognizer, ...]) -> list[Hit]:
+    hits: list[Hit] = []
     for recognizer in patterns:
         entity = EntityType(recognizer.get_supported_entities()[0])
         for result in recognizer.analyze(text, entities=[entity.value], regex_flags=0):
             if result.start is None or result.end is None:
                 continue
-            hits.append(_Hit(entity, result.start, result.end, float(result.score), entity.value))
+            hits.append(Hit(entity, result.start, result.end, float(result.score), entity.value))
     return hits
 
 
@@ -211,23 +230,23 @@ def _context_digits(
     folded: str,
     mapping: list[int],
     orig_to_fold: list[int | None],
-) -> list[_Hit]:
-    hits: list[_Hit] = []
+) -> list[Hit]:
+    hits: list[Hit] = []
     for match in re.finditer(_CMND_RE, text):
         if _has_label_before(folded, mapping, orig_to_fold, match.start(), _ID_LABELS):
             hits.append(
-                _Hit(EntityType.NATIONAL_ID, match.start(), match.end(), _CONTEXT, "national_id")
+                Hit(EntityType.NATIONAL_ID, match.start(), match.end(), _CONTEXT, "national_id")
             )
     for match in re.finditer(_PASSPORT_RE, text):
         if _has_label_before(folded, mapping, orig_to_fold, match.start(), _PASSPORT_LABELS):
-            hits.append(_Hit(EntityType.PASSPORT, match.start(), match.end(), _CONTEXT, "passport"))
+            hits.append(Hit(EntityType.PASSPORT, match.start(), match.end(), _CONTEXT, "passport"))
     return hits
 
 
 def _labeled_fields(
     text: str, folded: str, mapping: list[int], orig_to_fold: list[int | None]
-) -> list[_Hit]:
-    hits: list[_Hit] = []
+) -> list[Hit]:
+    hits: list[Hit] = []
     all_labels = tuple(label for _, labels in _FIELD_LABELS for label in labels)
     for entity, labels in _FIELD_LABELS:
         for label in labels:
@@ -249,14 +268,14 @@ def _labeled_fields(
                     continue
                 if entity is EntityType.PASSPORT:
                     continue
-                hits.append(_Hit(entity, value_start, value_end, _HIGH, entity.value))
+                hits.append(Hit(entity, value_start, value_end, _HIGH, entity.value))
     return hits
 
 
-def _dob_from_value(text: str, start: int, end: int, folded: str, mapping: list[int]) -> list[_Hit]:
+def _dob_from_value(text: str, start: int, end: int, folded: str, mapping: list[int]) -> list[Hit]:
     slice_text = text[start:end]
     folded_slice = folded[_fold_index(mapping, start) : _fold_index(mapping, end)]
-    found: list[_Hit] = []
+    found: list[Hit] = []
     for pattern in (_DATE_RE, r"(?<!\d)(\d{1,2})\s*tuoi", _YEAR_RE):
         for match in re.finditer(pattern, folded_slice, flags=re.IGNORECASE):
             orig_start, orig_end = original_span(
@@ -266,31 +285,31 @@ def _dob_from_value(text: str, start: int, end: int, folded: str, mapping: list[
             )
             if orig_end > orig_start:
                 found.append(
-                    _Hit(EntityType.DATE_OF_BIRTH, orig_start, orig_end, 0.90, "date_of_birth")
+                    Hit(EntityType.DATE_OF_BIRTH, orig_start, orig_end, 0.90, "date_of_birth")
                 )
     if found:
         return found
     if slice_text.strip():
-        return [_Hit(EntityType.DATE_OF_BIRTH, start, end, 0.90, "date_of_birth")]
+        return [Hit(EntityType.DATE_OF_BIRTH, start, end, 0.90, "date_of_birth")]
     return []
 
 
-def _age_hits(text: str) -> list[_Hit]:
-    hits: list[_Hit] = []
+def _age_hits(text: str) -> list[Hit]:
+    hits: list[Hit] = []
     for match in re.finditer(r"(?i)(?:tu[oôố]i|age)\s*[:\-]?\s*(\d{1,2})\b", text):
         hits.append(
-            _Hit(EntityType.DATE_OF_BIRTH, match.start(1), match.end(1), 0.90, "date_of_birth")
+            Hit(EntityType.DATE_OF_BIRTH, match.start(1), match.end(1), 0.90, "date_of_birth")
         )
     for match in re.finditer(r"(?i)(?<!\d)(\d{1,2})\s*tu[oôố]i\b", text):
         hits.append(
-            _Hit(EntityType.DATE_OF_BIRTH, match.start(1), match.end(1), 0.90, "date_of_birth")
+            Hit(EntityType.DATE_OF_BIRTH, match.start(1), match.end(1), 0.90, "date_of_birth")
         )
     return hits
 
 
 def _salary_hits(
     text: str, folded: str, mapping: list[int], orig_to_fold: list[int | None]
-) -> list[_Hit]:
+) -> list[Hit]:
     return _salary_in(
         text, 0, len(text), folded, mapping, require_label=True, orig_to_fold=orig_to_fold
     )
@@ -305,8 +324,8 @@ def _salary_in(
     *,
     require_label: bool = False,
     orig_to_fold: list[int | None] | None = None,
-) -> list[_Hit]:
-    hits: list[_Hit] = []
+) -> list[Hit]:
+    hits: list[Hit] = []
     region = text[start:end]
     for match in re.finditer(_SALARY_RE, region, flags=re.IGNORECASE):
         abs_start, abs_end = start + match.start(), start + match.end()
@@ -316,14 +335,14 @@ def _salary_in(
             and not _has_label_before(folded, mapping, orig_to_fold, abs_start, _SALARY_LABELS)
         ):
             continue
-        hits.append(_Hit(EntityType.SALARY, abs_start, abs_end, 0.90, "salary"))
+        hits.append(Hit(EntityType.SALARY, abs_start, abs_end, 0.90, "salary"))
     return hits
 
 
 def _url_hits(
     text: str, folded: str, mapping: list[int], orig_to_fold: list[int | None]
-) -> list[_Hit]:
-    hits: list[_Hit] = []
+) -> list[Hit]:
+    hits: list[Hit] = []
     for match in re.finditer(_URL_RE, text, flags=re.IGNORECASE):
         value = match.group(0)
         known = any(site in value.casefold() for site in ("linkedin.", "github.", "facebook."))
@@ -340,29 +359,8 @@ def _url_hits(
             score = _REVIEW
         else:
             continue
-        hits.append(
-            _Hit(EntityType.PERSONAL_URL, match.start(), match.end(), score, "personal_url")
-        )
+        hits.append(Hit(EntityType.PERSONAL_URL, match.start(), match.end(), score, "personal_url"))
     return hits
-
-
-def _reference_ranges(
-    folded: str, mapping: list[int], text_len: int
-) -> tuple[tuple[int, int], ...]:
-    ranges: list[tuple[int, int]] = []
-    for heading in _REF_HEADINGS:
-        for match in re.finditer(rf"(?<!\w){re.escape(heading)}(?!\w)", folded):
-            start, _ = original_span(mapping, match.start(), match.end())
-            end = text_len
-            for other in _OTHER_HEADINGS:
-                later = re.search(rf"(?<!\w){re.escape(other)}(?!\w)", folded[match.end() :])
-                if later is not None:
-                    other_start, _ = original_span(
-                        mapping, match.end() + later.start(), match.end() + later.end()
-                    )
-                    end = min(end, other_start)
-            ranges.append((start, end))
-    return tuple(ranges)
 
 
 def _has_label_before(
@@ -422,68 +420,14 @@ def _fold_index(mapping: list[int], orig: int) -> int:
     return len(mapping)
 
 
-def _resolve(hits: list[_Hit]) -> list[_Hit]:
-    if not hits:
-        return []
-    ordered = sorted(hits, key=lambda hit: (hit.start, -hit.end, -hit.confidence, -_priority(hit)))
-    kept: list[_Hit] = []
-    for hit in ordered:
-        overlapped = [index for index, current in enumerate(kept) if _overlap(current, hit)]
-        if not overlapped:
-            kept.append(hit)
-            continue
-        drop_new = False
-        for index in reversed(overlapped):
-            current = kept[index]
-            if current.entity_type is hit.entity_type:
-                kept[index] = _Hit(
-                    current.entity_type,
-                    min(current.start, hit.start),
-                    max(current.end, hit.end),
-                    max(current.confidence, hit.confidence),
-                    current.detector_id,
-                )
-                drop_new = True
-                continue
-            if _priority(hit) > _priority(current):
-                kept.pop(index)
-            else:
-                drop_new = True
-        if not drop_new:
-            kept.append(hit)
-    return sorted(kept, key=lambda hit: (hit.start, hit.end, hit.entity_type.value))
-
-
-def _overlap(left: _Hit, right: _Hit) -> bool:
-    return left.start < right.end and right.start < left.end
-
-
-def _priority(hit: _Hit) -> int:
-    order = {
-        EntityType.EMAIL: 100,
-        EntityType.NATIONAL_ID: 90,
-        EntityType.PASSPORT: 85,
-        EntityType.DATE_OF_BIRTH: 80,
-        EntityType.SALARY: 80,
-        EntityType.POSTAL_ADDRESS: 75,
-        EntityType.PHONE: 70,
-        EntityType.PERSONAL_URL: 60,
-        EntityType.GENDER: 50,
-        EntityType.MARITAL_STATUS: 50,
-        EntityType.NATIONALITY: 50,
-        EntityType.RELIGION: 50,
-        EntityType.ETHNICITY: 50,
-        EntityType.HEALTH: 50,
-    }
-    return order.get(hit.entity_type, 10)
-
-
-def _to_match(hit: _Hit, part: TextPart, refs: tuple[tuple[int, int], ...]) -> TextMatch:
+def _to_match(hit: Hit, part: TextPart, refs: tuple[tuple[int, int], ...]) -> TextMatch:
     detector_id = hit.detector_id
+    signals = hit.signals
     if hit.entity_type in {EntityType.EMAIL, EntityType.PHONE} and any(
         start <= hit.start < end for start, end in refs
     ):
         detector_id = f"{hit.entity_type.value}.reference"
+        signals = (*signals, "reference_section")
     return TextMatch(
         entity_type=hit.entity_type,
         start=hit.start,
@@ -493,4 +437,5 @@ def _to_match(hit: _Hit, part: TextPart, refs: tuple[tuple[int, int], ...]) -> T
         detector_version=DETECTOR_VERSION,
         page_number=part.page_number,
         part_name=part.part_name,
+        signals=signals,
     )

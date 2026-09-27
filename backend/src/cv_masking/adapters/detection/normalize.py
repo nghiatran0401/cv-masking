@@ -1,10 +1,15 @@
 """NFC-safe folding for label matching. Offsets always map back to the original text."""
 
 import unicodedata
+from collections.abc import Sequence
 
 
 def fold_with_map(text: str) -> tuple[str, list[int], list[int | None]]:
-    """Return folded text, folded→original indexes, and original→first folded index."""
+    """Return folded text, folded→original indexes, and original→first folded index.
+
+    Folding strips combining marks, case-folds, and maps "đ" to "d" (it has no
+    Unicode decomposition, so stripping marks alone leaves it unchanged).
+    """
     folded: list[str] = []
     mapping: list[int] = []
     orig_to_fold: list[int | None] = [None] * len(text)
@@ -19,12 +24,16 @@ def fold_with_map(text: str) -> tuple[str, list[int], list[int | None]]:
             if first:
                 orig_to_fold[index] = len(folded)
                 first = False
-            folded.append(piece)
+            folded.append("d" if piece == "đ" else piece)
             mapping.append(index)
     return "".join(folded), mapping, orig_to_fold
 
 
-def original_span(mapping: list[int], folded_start: int, folded_end: int) -> tuple[int, int]:
+def fold(text: str) -> str:
+    return fold_with_map(text)[0]
+
+
+def original_span(mapping: Sequence[int], folded_start: int, folded_end: int) -> tuple[int, int]:
     if folded_end <= folded_start or folded_start >= len(mapping):
         return (0, 0)
     end_index = min(folded_end, len(mapping)) - 1

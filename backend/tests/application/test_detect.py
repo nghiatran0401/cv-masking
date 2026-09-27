@@ -177,11 +177,10 @@ def test_pdf_part_maps_to_boxes(service: DetectionService) -> None:
 def test_low_confidence_sets_review(service: DetectionService) -> None:
     document = extracted("Lien he: https://example.test/portfolio")
     outcome = service.detect(document, MaskingPolicy())
-    urls = [match for match in outcome.matches if match.entity_type is EntityType.PERSONAL_URL]
-    if not urls:
-        return
-    if any(match.confidence < 0.85 for match in urls):
-        assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
+    urls = [item for item in outcome.findings if item.entity_type is EntityType.PERSONAL_URL]
+    assert len(urls) == 1
+    assert urls[0].requires_review
+    assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
 
 
 def test_corpus_precision_and_recall(service: DetectionService) -> None:

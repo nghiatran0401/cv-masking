@@ -1,4 +1,9 @@
-"""Run Stage 7 detectors and apply policy thresholds. Text is never stored."""
+"""Run detectors and apply policy thresholds. Text is never stored.
+
+A document fails to review when any finding is uncertain, when no candidate
+name was found (a CV always names its candidate), or when a match cannot be
+placed on the page.
+"""
 
 import logging
 from uuid import uuid4
@@ -51,7 +56,7 @@ class DetectionService:
         self._detector = detector
 
     def detect(self, document: ExtractedDocument, policy: MaskingPolicy) -> DetectionOutcome:
-        """Find Stage 7 entities. Salary is always returned; policy does not hide it."""
+        """Find entities. Salary is always returned; policy does not hide it."""
         del policy
         try:
             raw = self._detector.detect(document)
@@ -59,21 +64,22 @@ class DetectionService:
             logger.info("detection failed")
             return DetectionOutcome((), (), 0, frozenset(), ErrorCode.DETECT_FAILED)
         kept, suppressed = _apply_thresholds(raw)
-        findings = tuple(
-            finding for match in kept if (finding := _to_finding(match, document)) is not None
-        )
-        review = (
-            frozenset({ReviewReason.DETECT_LOW_CONFIDENCE})
-            if any(item.requires_review for item in findings)
-            else frozenset()
-        )
+        located = [(match, _to_finding(match, document)) for match in kept]
+        findings = tuple(finding for _, finding in located if finding is not None)
+        review: set[ReviewReason] = set()
+        if any(item.requires_review for item in findings):
+            review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
+        if not any(item.entity_type is EntityType.CANDIDATE_NAME for item in findings):
+            review.add(ReviewReason.DETECT_LOW_CONFIDENCE)
+        if any(finding is None for _, finding in located):
+            review.add(ReviewReason.MAP_AMBIGUOUS)
         logger.info(
             "detection findings=%d suppressed=%d review=%d",
             len(findings),
             suppressed,
             len(review),
         )
-        return DetectionOutcome(findings, kept, suppressed, review)
+        return DetectionOutcome(findings, kept, suppressed, frozenset(review))
 
 
 def _apply_thresholds(result: DetectionResult) -> tuple[tuple[TextMatch, ...], int]:

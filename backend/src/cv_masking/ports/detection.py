@@ -1,7 +1,7 @@
 """Format-neutral detector output. Transient only: never persisted or logged."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 from cv_masking.domain._validation import (
     require_finite_float,
@@ -14,10 +14,37 @@ from cv_masking.domain.limits import HARD_MAX_PDF_PAGES
 from cv_masking.domain.policy import EntityType
 from cv_masking.ports.extraction import ExtractedDocument
 
+SIGNALS: Final = frozenset(
+    {
+        "label",
+        "shape_mismatch",
+        "top_of_page",
+        "first_line",
+        "vn_surname",
+        "largest_font",
+        "email_match",
+        "repeat",
+        "reference_section",
+        "honorific",
+        "line_start",
+        "section_heading",
+        "contact_block",
+        "address_cues",
+        "house_number",
+    }
+)
+PROVENANCE_REQUIRED: Final = frozenset(
+    {EntityType.CANDIDATE_NAME, EntityType.REFERENCE_NAME, EntityType.FAMILY_DETAILS}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class TextMatch:
-    """A character range on one extracted part. Never carries the matched text."""
+    """A character range on one extracted part. Never carries the matched text.
+
+    ``signals`` names the heuristic rules that fired (from ``SIGNALS``); heuristic
+    entity types must carry at least one so every result is explainable.
+    """
 
     entity_type: EntityType
     start: int
@@ -27,6 +54,7 @@ class TextMatch:
     detector_version: str
     page_number: int | None = None
     part_name: str | None = None
+    signals: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.entity_type, EntityType):
@@ -48,6 +76,12 @@ class TextMatch:
             require_int(
                 self.page_number, "TextMatch.page_number", minimum=1, maximum=HARD_MAX_PDF_PAGES
             )
+        if not isinstance(self.signals, tuple) or not all(
+            isinstance(signal, str) and signal in SIGNALS for signal in self.signals
+        ):
+            raise InvariantError("TextMatch.signals must contain known signal names")
+        if self.entity_type in PROVENANCE_REQUIRED and not self.signals:
+            raise InvariantError("TextMatch for a heuristic entity type needs signals")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,5 +97,5 @@ class DetectionResult:
 
 class DocumentDetector(Protocol):
     def detect(self, document: ExtractedDocument) -> DetectionResult:
-        """Find Stage 7 entities. Never logs or stores document text."""
+        """Find entities with provenance. Never logs or stores document text."""
         ...
