@@ -23,7 +23,7 @@ then handoff, then **git commit** (D-18).
 | 9 | Span-to-box mapping | Complete (committed) |
 | 10 | Permanent redaction | Complete (committed) |
 | 10b | DOCX redaction | Complete (committed) |
-| 11 | Independent verification | Not started |
+| 11 | Independent verification | Complete (committed) |
 | 11b | DOCX verification | Not started |
 | 12 | Local job queue | Not started |
 | 13 | HR interface | Not started |
@@ -204,6 +204,8 @@ Execute Stage 11 only. Implement an independent verifier that reopens outputs, c
 Acceptance: Only verification PASSED may transition to COMPLETED; residual data is caught; verifier uses a fresh parser/file handle.
 
 Stage 0 notes: Verifier also checks links and every hidden-content category. It does not inspect image content (D-13).
+
+Stage 11 notes: the verifier reruns only the deterministic Stage 7 rules; the Stage 8 name heuristics depend on layout that redaction changes, so names are caught by the source-value search and the position check instead. Only distinctive source values are searched (see the handoff). The verification service is format-neutral; Stage 11b adds a DOCX inspector. See [stage-handoffs/stage-11.md](stage-handoffs/stage-11.md).
 
 ## Stage 11b — DOCX verification
 Goal: Prevent unverified DOCX outputs from being released.

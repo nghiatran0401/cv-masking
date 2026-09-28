@@ -141,26 +141,7 @@ class PresidioDetector:
     """
 
     def __init__(self) -> None:
-        self._patterns = (
-            PatternRecognizer(
-                supported_entity=EntityType.EMAIL.value,
-                name="email",
-                patterns=[Pattern("email", _EMAIL_RE, _HIGH)],
-                version=DETECTOR_VERSION,
-            ),
-            PatternRecognizer(
-                supported_entity=EntityType.PHONE.value,
-                name="phone",
-                patterns=[Pattern("phone", _PHONE_RE, _HIGH)],
-                version=DETECTOR_VERSION,
-            ),
-            PatternRecognizer(
-                supported_entity=EntityType.NATIONAL_ID.value,
-                name="national_id",
-                patterns=[Pattern("cccd", _CCCD_RE, 0.90)],
-                version=DETECTOR_VERSION,
-            ),
-        )
+        self._patterns = _recognizers()
 
     def detect(self, document: ExtractedDocument) -> DetectionResult:
         views = tuple(build_view(part) for part in document.parts)
@@ -186,6 +167,49 @@ class PresidioDetector:
             refs = view.ranges(SectionKind.REFERENCE)
             matches.extend(_to_match(hit, view.part, refs) for hit in resolve(per_part[index]))
         return DetectionResult(tuple(matches))
+
+
+class PatternDetector:
+    """Only the deterministic Stage 7 rules: value shapes and labeled fields.
+
+    The Stage 8 name and section heuristics are left out on purpose. They depend
+    on layout context, and a redacted page changes that context (the line after
+    a redacted name becomes the "first line"), so on an output they would flag
+    unrelated text. The verifier catches names by searching for source values.
+    """
+
+    def __init__(self) -> None:
+        self._patterns = _recognizers()
+
+    def detect(self, document: ExtractedDocument) -> DetectionResult:
+        matches: list[TextMatch] = []
+        for part in document.parts:
+            hits = resolve(_field_hits(part, self._patterns))
+            matches.extend(_to_match(hit, part, ()) for hit in hits)
+        return DetectionResult(tuple(matches))
+
+
+def _recognizers() -> tuple[PatternRecognizer, ...]:
+    return (
+        PatternRecognizer(
+            supported_entity=EntityType.EMAIL.value,
+            name="email",
+            patterns=[Pattern("email", _EMAIL_RE, _HIGH)],
+            version=DETECTOR_VERSION,
+        ),
+        PatternRecognizer(
+            supported_entity=EntityType.PHONE.value,
+            name="phone",
+            patterns=[Pattern("phone", _PHONE_RE, _HIGH)],
+            version=DETECTOR_VERSION,
+        ),
+        PatternRecognizer(
+            supported_entity=EntityType.NATIONAL_ID.value,
+            name="national_id",
+            patterns=[Pattern("cccd", _CCCD_RE, 0.90)],
+            version=DETECTOR_VERSION,
+        ),
+    )
 
 
 def _best_header(

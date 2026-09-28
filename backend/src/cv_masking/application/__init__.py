@@ -6,6 +6,7 @@ from cv_masking.application.jobs import ORPHAN_GRACE, JobService, ReconcileRepor
 from cv_masking.application.redaction import RedactionOutcome, RedactionService
 from cv_masking.application.uploads import UploadError, UploadLimits, UploadService
 from cv_masking.application.validation import ValidationOutcome, ValidationService
+from cv_masking.application.verification import VerificationAttempt, VerificationService
 
 __all__ = [
     "ORPHAN_GRACE",
@@ -22,5 +23,7 @@ __all__ = [
     "UploadService",
     "ValidationOutcome",
     "ValidationService",
+    "VerificationAttempt",
+    "VerificationService",
     "identify_file",
 ]
