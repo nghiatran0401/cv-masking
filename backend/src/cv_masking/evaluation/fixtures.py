@@ -1,5 +1,5 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined"
-"""Synthetic annotated CVs for Stage 16. Values are policy-approved and never reported."""
+"""Synthetic annotated CVs for evaluation. Values are policy-approved and never reported."""
 
 from __future__ import annotations
 

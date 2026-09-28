@@ -1,7 +1,7 @@
 # Product scope
 
-Status: Stage 0 baseline. Changes require tech-lead approval and an update to the
-decision log below.
+Status: localhost PoC on macOS. Changes require tech-lead approval and an
+update to the decision log below.
 
 ## 1. Problem
 
@@ -40,8 +40,6 @@ laptop and produces permanently redacted copies.
 - Output file naming: `redacted-<uuid>.pdf` for PDF input, `redacted-<uuid>.docx` for DOCX
   input. Original filenames are held in browser memory only.
 - Local retention and cleanup per [data-retention.md](data-retention.md).
-- Release-candidate evidence: synthetic evaluation harness and operator docs
-  (Stage 16). No new masking features in that stage.
 
 ## 4. Non-goals
 
@@ -112,11 +110,7 @@ laptop and produces permanently redacted copies.
 | D-41 | Stage 12 choices: `DETECT_FAILED` and `JOB_TIMEOUT` are terminal (`T`), because detection is deterministic and a retry is a fresh upload that would fail the same way; the per-document budget is 120 s (configurable, cap 600 s) covering validation, processing, and verification; cancel applies to `CREATED`, `UPLOADED`, and `QUEUED`; at shutdown the document in progress gets 10 s, then fails with `JOB_INTERRUPTED`; documents a Stage 11 database held for hidden-content approval fail with `JOB_INTERRUPTED` on upgrade (migration 2). | Tech lead, after Stage 12 |
 | D-42 | Stage 15 launcher: uv virtualenv (not a frozen binary) so worker `spawn` is unchanged; `--desktop` takes an exclusive flock, generates a one-time bootstrap query that seeds the Stage 14 session/CSRF, and opens the default browser with `/usr/bin/open`; `GET /api/health` stays unauthenticated; AGPL remains residual until legal confirms; Apple Silicon is tested, Intel is documented untested. | Tech lead, Stage 15 |
 
-## 6. Known gaps between approved scope and the stage plan
+## 6. Known gaps
 
-These are recorded, not resolved. Each is a question for the tech lead in the Stage 0 handoff.
-
-None open.
-
-Resolved: detector coverage (D-14), photos (D-13, accepted risk), Windows (D-08, future
-stage), DOCX (D-15 to D-17), hidden-content approve/deny ownership (D-29).
+Windows support is a future stage (D-08). No other gaps are open against the
+approved scope.

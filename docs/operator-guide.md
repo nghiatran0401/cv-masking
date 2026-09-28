@@ -5,8 +5,7 @@ This PoC runs only on the HR user's **macOS** laptop, bound to
 remain. Embedded photos and images are **not** masked (D-13).
 
 Install and first launch: [install.md](install.md). Troubleshooting:
-[troubleshooting.md](troubleshooting.md). Demo walkthrough:
-[demo-script.md](demo-script.md).
+[troubleshooting.md](troubleshooting.md).
 
 ## Start and stop
 
@@ -60,9 +59,8 @@ drafts inside the UI (there is no such field) or into ChatGPT/Cursor.
 - Short or generic words (gender, ethnicity tokens) that verification
   does not search everywhere.
 
-## Evaluation (engineers, synthetic only)
+## Evaluation
 
-`make eval` prints a metadata-only report. Authorized real-CV runs are
-optional, human-only, and documented in
-[evaluation/README.md](evaluation/README.md). Never give real CVs to
-Cursor or any AI tool.
+`make eval` prints a metadata-only report on synthetic files (no real CVs).
+Never give real CVs to Cursor or any AI tool. An authorized local run, if
+ever needed, is described in [SECURITY.md](../SECURITY.md) §2.

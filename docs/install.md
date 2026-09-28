@@ -1,8 +1,8 @@
 # Install, run, and uninstall (macOS)
 
-Status: Stage 15. This is an **unsigned** proof of concept (D-39). It is not
-notarized. Bank legal has not confirmed the PyMuPDF AGPL-3.0 licence path;
-do not treat this as an IT-approved distribution until that happens.
+This is an **unsigned** proof of concept (D-39). It is not notarized. Bank
+legal has not confirmed the PyMuPDF AGPL-3.0 licence path; do not treat this
+as an IT-approved distribution until that happens.
 
 Tested on **Apple Silicon** (this checkout: arm64, Apple M2). **Intel
 (x86_64) is not tested.** Install on the HR Mac itself; do not copy

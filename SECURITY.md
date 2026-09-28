@@ -52,8 +52,16 @@ environment local.
   same structure. If you cannot, report only the error code, document UUID, page count,
   and structural facts (e.g. "two-column, table on page 2") — never content.
 - **Never** set `CV_MASKING_AUTHORIZED_EVAL=1` or pass `--authorized` from Cursor or any
-  agent. That path is for a human on the HR laptop only
-  ([docs/evaluation/README.md](docs/evaluation/README.md)).
+  agent. That path is for a human on the HR laptop only. From a normal Terminal (Cursor
+  closed), with CVs **outside** this repo:
+
+  ```bash
+  export CV_MASKING_AUTHORIZED_EVAL=1
+  cd backend
+  uv run --locked python -m cv_masking.evaluation --authorized /absolute/path/to/cvs
+  ```
+
+  The printout is counts only (no filenames or values). Delete the CV copy afterwards.
 
 ## 3. Test data
 
@@ -82,22 +90,22 @@ environment local.
 
 ## 4. Dependencies and subprocesses
 
-- Each new dependency or subprocess needs a written justification in the stage handoff:
-  purpose, license, network behavior, native code, packaging impact.
+- Each new dependency or subprocess needs a written justification in the commit message
+  (purpose, license, network behavior, native code, packaging impact).
 - Lockfiles are committed; versions are pinned.
 - npm never runs dependency install scripts (`ignore-scripts=true` in `frontend/.npmrc`),
   and `frontend/package.json` must not define lifecycle or `pre`/`post` hook scripts.
   Both rules are tested.
 - Dependencies that phone home (telemetry, update checks, model downloads at runtime) are
   forbidden unless the behavior is fully disabled in code and tested.
-- Licensing note: PyMuPDF (planned for Stage 6) is AGPL-3.0 or commercial. Bank legal must
+- Licensing note: PyMuPDF is AGPL-3.0 or commercial. Bank legal must
   confirm the license path before any distribution beyond the PoC.
 
 ## 5. Reporting a problem
 
 This is an internal PoC with no public disclosure channel. Report suspected
 leakage or vulnerabilities directly to the tech lead. In the report include only
-error codes, document UUIDs, stage, and steps to reproduce with synthetic data.
+error codes, document UUIDs, and steps to reproduce with synthetic data.
 **Do not attach the affected CV or its output.**
 
 If real candidate data is found in the repository, logs, a commit, or an AI chat:

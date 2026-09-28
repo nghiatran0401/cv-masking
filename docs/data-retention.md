@@ -1,14 +1,8 @@
 # Privacy assumptions, local retention, and cleanup
 
-Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implemented in
-Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D-24).
-Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker, its
-recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
-Stage 13 streams individual downloads and writes the ZIP export in a work directory
-that is deleted when the response finishes. Stage 14 writes metadata-only logs under
-`data/logs/`. Stage 15 adds `data/lock/` for the desktop instance lock. Stage 16
-evaluation runs in process and does not write under `data/`. Uninstall is
-documented in [install.md](install.md).
+Runtime files live in the project's `data/` folder (D-22–D-26, D-33). The
+evaluation harness does not write there. Uninstall is documented in
+[install.md](install.md).
 
 ## 1. Privacy assumptions
 

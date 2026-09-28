@@ -4,15 +4,15 @@
 Build a localhost-only web application for bank-managed macOS laptops (Windows is a later, separate stage) that batch-detects and permanently redacts approved PII/sensitive entities from CV PDF and DOCX files (Vietnamese primary, English supported), each redacted in its own format. No runtime document data may leave the laptop. Output is masked, not anonymized.
 
 ## Governing documents
-Read before every stage; they override assumptions:
+Read these before changing behaviour; they override assumptions:
 - [SECURITY.md](SECURITY.md) — runtime and developer-environment rules.
 - [THREAT_MODEL.md](THREAT_MODEL.md) — assets, trust boundaries, threats, residual risks.
-- [docs/product-scope.md](docs/product-scope.md) — scope, non-goals, decision log, known gaps.
+- [docs/product-scope.md](docs/product-scope.md) — scope, non-goals, decision log.
 - [docs/masking-policy.md](docs/masking-policy.md) — entity catalogue, mandatory vs optional, confidence, non-text components.
 - [docs/supported-pdf.md](docs/supported-pdf.md) — accepted inputs, limits, hidden content.
 - [docs/data-retention.md](docs/data-retention.md) — privacy assumptions, storage, retention, cleanup.
 - [docs/error-codes.md](docs/error-codes.md) — safe error codes and document state machine.
-- [docs/stage-plan.md](docs/stage-plan.md) — verbatim stage prompts and Stage 0 notes.
+- [docs/install.md](docs/install.md) and [docs/operator-guide.md](docs/operator-guide.md) — how HR runs the app.
 
 ## Developer-environment rules (Cursor / AI)
 - Everything the agent reads or is given is sent off-machine for inference. Treat the chat as a network boundary.
@@ -33,9 +33,9 @@ Read before every stage; they override assumptions:
 - Never implement visual overlays as redaction; use PDF redaction APIs and apply them.
 - Never implement DOCX redaction with formatting (highlight, shading, font color, hidden text); remove the text from the XML.
 - Never convert between PDF and DOCX, and never automate Word or LibreOffice.
-- Never weaken validation, cleanup, or tests to make a stage pass.
+- Never weaken validation, cleanup, or tests to make a change pass.
 - Do not introduce a dependency or subprocess without explaining its security and packaging impact.
-- Do not work beyond the requested stage.
+- Do not expand scope beyond the request.
 
 ## Architecture
 - Localhost web app on macOS; runtime files in the project's git- and Cursor-ignored `data/` folder (D-22). Do not add Windows-specific code before the Windows stage.
@@ -47,30 +47,14 @@ Read before every stage; they override assumptions:
 - PII detector output includes type, location (PDF page + boxes, or DOCX part + character range), confidence, detector/version, replacement, and review flag.
 - Raw entity text is transient only.
 
-## Required workflow for every stage
-1. Read AGENTS.md and relevant docs.
+## Required workflow
+1. Read AGENTS.md and the governing documents that apply.
 2. Inspect the current repository and tests.
-3. Restate the requested stage, assumptions, files to change, risks, and acceptance criteria.
-4. Wait for approval when the prompt explicitly requires a plan-only response.
-5. Implement only the approved stage in small cohesive changes.
-6. Add/update tests for success, failure, boundaries, and security behavior.
-7. Run format, lint, type-check, unit, and relevant integration tests.
-8. Review the diff for PII leakage, network calls, broad permissions, unsafe paths, and scope creep.
-9. Create docs/stage-handoffs/stage-N.md.
-10. Commit the stage with git once every check passes, using the handoff's suggested commit message. Before committing, confirm `git status` contains no ignored-type or runtime files. Never commit a failing stage; never push unless asked.
-11. Stop and report; do not start the next stage.
-
-## Handoff format
-- Stage and objective
-- Architecture decisions
-- Files added/changed
-- Commands run and exact results
-- Tests added
-- Security/privacy review
-- Known limitations
-- Manual verification steps
-- Questions/decisions for the tech lead
-- Suggested commit message
+3. Change only what the request needs, in small cohesive edits.
+4. Add/update tests for success, failure, boundaries, and security behavior.
+5. Run format, lint, type-check, unit, and relevant integration tests (`make check` when the change can affect the quality gate).
+6. Review the diff for PII leakage, network calls, broad permissions, unsafe paths, and scope creep.
+7. Commit only when the user asks. Never commit ignored-type or runtime files. Never push unless asked.
 
 ## Completion rules
-A stage is incomplete if tests are skipped, commands fail, sensitive values enter logs/storage, documentation is missing, or behavior cannot be demonstrated locally.
+A change is incomplete if tests are skipped, commands fail, sensitive values enter logs/storage, or behaviour cannot be demonstrated locally.

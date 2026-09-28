@@ -1,12 +1,10 @@
 # Threat model
 
-Status: Stage 16 (evaluation harness is in-process, synthetic, metadata-only;
-authorized real-CV run is optional, human-only, D-40). Stage 15 controls
-(built UI served from FastAPI, unsigned `.command` launcher, one-time
-bootstrap token) remain. PyMuPDF AGPL remains a residual until legal
-confirms. Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
+Status: localhost PoC (unsigned macOS launcher, loopback UI, synthetic
+evaluation). PyMuPDF AGPL remains a residual until legal confirms. Related:
+[SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
 [docs/masking-policy.md](docs/masking-policy.md), [docs/supported-pdf.md](docs/supported-pdf.md),
-[docs/install.md](docs/install.md), [docs/evaluation/README.md](docs/evaluation/README.md).
+[docs/install.md](docs/install.md).
 
 ## 1. System summary
 

@@ -24,7 +24,6 @@ type MessageTree = {
   findings: string;
   hidden: string;
   actions: string;
-  progress: string;
   cancel: string;
   retry: string;
   remove: string;
@@ -68,7 +67,6 @@ export const MESSAGES: Record<Language, MessageTree> = {
     findings: "Số chỗ đã che",
     hidden: "Nội dung ẩn đã gỡ",
     actions: "Thao tác",
-    progress: "Tiến độ",
     cancel: "Hủy",
     retry: "Thử lại",
     remove: "Xóa",
@@ -206,7 +204,6 @@ export const MESSAGES: Record<Language, MessageTree> = {
     findings: "Masked counts",
     hidden: "Hidden content removed",
     actions: "Actions",
-    progress: "Progress",
     cancel: "Cancel",
     retry: "Retry",
     remove: "Remove",
