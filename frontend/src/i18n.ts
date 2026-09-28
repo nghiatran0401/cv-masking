@@ -35,6 +35,7 @@ type MessageTree = {
   empty: string;
   busy: string;
   retryClosed: string;
+  sessionFailed: string;
   states: Record<string, string>;
   errors: Record<string, string>;
   reasons: Record<string, string>;
@@ -78,6 +79,7 @@ export const MESSAGES: Record<Language, MessageTree> = {
     empty: "Chưa có tệp.",
     busy: "Đang xử lý…",
     retryClosed: "Lô đã khóa. Tạo lô mới để tải lại tệp.",
+    sessionFailed: "Không mở được phiên làm việc. Tải lại trang.",
     states: {
       created: "Đang nhận",
       uploaded: "Đã nhận",
@@ -126,6 +128,10 @@ export const MESSAGES: Record<Language, MessageTree> = {
       STORAGE_PATH_REJECTED: "Đường lưu trữ không hợp lệ.",
       STORAGE_INTEGRITY_FAILED: "Tệp lưu trữ bị đổi.",
       INTERNAL_ERROR: "Lỗi nội bộ.",
+      SECURITY_HOST_REJECTED: "Yêu cầu không đến từ máy này.",
+      SECURITY_ORIGIN_REJECTED: "Nguồn yêu cầu không được phép.",
+      SECURITY_TOKEN_INVALID: "Phiên làm việc hết hạn. Tải lại trang.",
+      SECURITY_RATE_LIMITED: "Quá nhiều yêu cầu. Đợi rồi thử lại.",
     },
     reasons: {
       PDF_ENCRYPTED: "PDF đang khóa mật khẩu.",
@@ -212,6 +218,7 @@ export const MESSAGES: Record<Language, MessageTree> = {
     busy: "Processing…",
     retryClosed:
       "This batch is closed. Start a new batch to upload the file again.",
+    sessionFailed: "Could not open a session. Reload the page.",
     states: {
       created: "Receiving",
       uploaded: "Uploaded",
@@ -265,6 +272,10 @@ export const MESSAGES: Record<Language, MessageTree> = {
       STORAGE_PATH_REJECTED: "The storage path was refused.",
       STORAGE_INTEGRITY_FAILED: "A stored file no longer matches its hash.",
       INTERNAL_ERROR: "An internal error occurred.",
+      SECURITY_HOST_REJECTED: "The request did not come from this computer.",
+      SECURITY_ORIGIN_REJECTED: "The request origin is not allowed.",
+      SECURITY_TOKEN_INVALID: "The session expired. Reload the page.",
+      SECURITY_RATE_LIMITED: "Too many requests. Wait and try again.",
     },
     reasons: {
       PDF_ENCRYPTED: "The PDF is password-protected.",

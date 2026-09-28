@@ -35,6 +35,7 @@ from cv_masking.domain.hidden import HiddenContentCategory
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
 from cv_masking.domain.verification import VerificationOutcome
 from cv_masking.ports.processing import ProcessingCrashedError
+from http_support import LOOPBACK_BASE, authenticate_client
 
 _STUB_TIMEOUT_SECONDS = 20.0
 
@@ -280,7 +281,8 @@ def test_the_api_stays_responsive_while_the_worker_is_busy(
     for index in range(3):
         clock.advance()
         uploaded_document(service, input_store, batch.batch_id, content=stubs.BUSY + bytes([index]))
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), base_url=LOOPBACK_BASE) as client:
+        authenticate_client(client)
         version = client.get(f"/api/batches/{batch.batch_id}").json()["version"]
         started = client.post(
             f"/api/batches/{batch.batch_id}/start", json={"expected_version": version}

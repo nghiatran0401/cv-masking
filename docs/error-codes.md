@@ -222,11 +222,15 @@ The JSON body is always `{ "code": "<ErrorCode>" }` plus optional `batch_id`,
 `document_id`, and `limit`. There is no message field and no filename. Unknown
 batch or document IDs return `404` with `INTERNAL_ERROR` (there is no `NOT_FOUND`
 code). Concurrent or illegal transitions return `409` with `INTERNAL_ERROR`.
+Host, Origin, and token failures return `403` with the matching `SECURITY_*`
+code. Too many requests return `429` with `SECURITY_RATE_LIMITED`.
 
 | Status | Codes |
 |---|---|
 | 400 | `UPLOAD_UNSUPPORTED_TYPE`, `UPLOAD_SPOOFED_TYPE`, `DOCX_MACRO_OR_TEMPLATE`, `UPLOAD_MALFORMED_REQUEST` |
+| 403 | `SECURITY_HOST_REJECTED`, `SECURITY_ORIGIN_REJECTED`, `SECURITY_TOKEN_INVALID` |
 | 408 | `UPLOAD_TIMEOUT` |
 | 409 | `UPLOAD_DUPLICATE`, `UPLOAD_BATCH_CLOSED` |
 | 413 | `UPLOAD_FILE_TOO_LARGE`, `UPLOAD_BATCH_FILE_LIMIT`, `UPLOAD_BATCH_SIZE_LIMIT` |
+| 429 | `SECURITY_RATE_LIMITED` |
 | 500 | `STORAGE_WRITE_FAILED`, `STORAGE_PATH_REJECTED`, `STORAGE_INTEGRITY_FAILED`, `INTERNAL_ERROR` |

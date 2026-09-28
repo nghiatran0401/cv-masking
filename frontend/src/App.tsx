@@ -13,9 +13,11 @@ import {
   cancelDocument,
   createBatch,
   denyDocument,
+  downloadFile,
   downloadUrl,
   exportUrl,
   getBatch,
+  openSession,
   purgeBatch,
   removeDocument,
   setMaskSalary,
@@ -96,6 +98,16 @@ export function App() {
     document.title = t.title;
     saveLanguage(language);
   }, [language, t.title]);
+
+  useEffect(() => {
+    void openSession().catch((error: unknown) => {
+      setNotice(
+        error instanceof ApiRequestError
+          ? messageForCode(loadLanguage(), error.code)
+          : (loadLanguage() === "en" ? MESSAGES.en : MESSAGES.vi).sessionFailed,
+      );
+    });
+  }, []);
 
   const refresh = useCallback(async (batchId: string) => {
     const detail = await getBatch(batchId);
@@ -368,9 +380,23 @@ export function App() {
             {t.purge}
           </button>
           {completed.length > 0 && batch !== null ? (
-            <a className="button-link" href={exportUrl(batch.batch_id)}>
+            <button
+              type="button"
+              className="button-link"
+              onClick={() => {
+                void downloadFile(exportUrl(batch.batch_id)).catch(
+                  (error: unknown) => {
+                    setNotice(
+                      error instanceof ApiRequestError
+                        ? messageForCode(language, error.code)
+                        : messageForCode(language, "INTERNAL_ERROR"),
+                    );
+                  },
+                );
+              }}
+            >
               {t.exportZip}
-            </a>
+            </button>
           ) : null}
         </div>
       </section>
@@ -453,6 +479,17 @@ export function App() {
           await denyDocument(batch.batch_id, job.document_id, job.version);
           await refresh(batch.batch_id);
         }}
+        onDownload={async (job) => {
+          try {
+            await downloadFile(downloadUrl(job.batch_id, job.document_id));
+          } catch (error: unknown) {
+            setNotice(
+              error instanceof ApiRequestError
+                ? messageForCode(language, error.code)
+                : messageForCode(language, "INTERNAL_ERROR"),
+            );
+          }
+        }}
       />
     </main>
   );
@@ -469,6 +506,7 @@ function FileTable({
   onRetry,
   onKeep,
   onDeny,
+  onDownload,
 }: {
   batch: BatchDetail | null;
   locals: LocalFile[];
@@ -480,6 +518,7 @@ function FileTable({
   onRetry: (job: DocumentView) => Promise<void>;
   onKeep: (job: DocumentView) => Promise<void>;
   onDeny: (job: DocumentView) => Promise<void>;
+  onDownload: (job: DocumentView) => Promise<void>;
 }) {
   const pending = locals.filter((row) => row.documentId === null);
   const jobs = batch?.documents ?? [];
@@ -549,9 +588,9 @@ function FileTable({
                   </button>
                 ) : null}
                 {job.has_output ? (
-                  <a href={downloadUrl(job.batch_id, job.document_id)}>
+                  <button type="button" onClick={() => void onDownload(job)}>
                     {t.download}
-                  </a>
+                  </button>
                 ) : null}
                 {job.can_approve ? (
                   <button type="button" onClick={() => void onKeep(job)}>

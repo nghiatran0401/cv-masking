@@ -13,6 +13,7 @@ from cv_masking.application import JobService, UploadService
 from cv_masking.config import Settings
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.document_job import DocumentState
+from http_support import app_client
 
 
 def _send(
@@ -77,7 +78,7 @@ def test_oversized_file_is_refused(
     root: StorageRoot,
 ) -> None:
     tight = Settings(max_file_bytes=40)
-    client = TestClient(
+    client = app_client(
         create_app(
             Runtime(
                 service,

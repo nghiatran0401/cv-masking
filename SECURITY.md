@@ -22,6 +22,8 @@ with [AGENTS.md](AGENTS.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 - Raw PII (entity values, extracted text, original filenames) is never written to SQLite,
   logs, API status responses, CSV reports, snapshots, or test output.
 - Errors cross boundaries only as codes from [docs/error-codes.md](docs/error-codes.md).
+- The API accepts only loopback `Host` values, loopback `Origin` values, a startup
+  session cookie, and a CSRF header. Requests without them fail closed.
 - When uncertain, fail closed: `REVIEW_REQUIRED` or `FAILED`.
 
 ## 2. Developer environment (Cursor and AI assistants)

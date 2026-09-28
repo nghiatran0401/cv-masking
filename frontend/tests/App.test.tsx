@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
 import { MESSAGES, messageForCode, messageForState } from "../src/i18n";
@@ -10,6 +10,20 @@ const enCopy = MESSAGES.en;
 
 beforeEach(() => {
   sessionStorage.clear();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      throw new Error(`unexpected ${url}`);
+    }),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("App", () => {
@@ -47,12 +61,10 @@ describe("App", () => {
 
   it("keeps file names in the table after a mocked upload", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
+      const url = requestUrl(input);
+      if (url.endsWith("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
       if (url === "/api/batches" && init?.method === "POST") {
         return json({
           batch_id: "00000000-0000-4000-8000-0000000000aa",
@@ -64,7 +76,9 @@ describe("App", () => {
       }
       if (
         url.endsWith("/api/batches/00000000-0000-4000-8000-0000000000aa") &&
-        init === undefined
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
       ) {
         return json({
           batch_id: "00000000-0000-4000-8000-0000000000aa",
@@ -132,7 +146,6 @@ describe("App", () => {
       expect.stringMatching(/^https?:\/\/(?!127\.0\.0\.1)/),
     );
     expect(screen.queryByText("%PDF-synthetic")).not.toBeInTheDocument();
-    vi.unstubAllGlobals();
   });
 
   it("shows a failed document beside a completed one and offers only the masked ZIP", async () => {
@@ -140,12 +153,10 @@ describe("App", () => {
     const doneId = "00000000-0000-4000-8000-0000000000d1";
     const failedId = "00000000-0000-4000-8000-0000000000d2";
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
+      const url = requestUrl(input);
+      if (url.endsWith("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
       if (url === "/api/batches" && init?.method === "POST") {
         return json({
           batch_id: batchId,
@@ -155,7 +166,12 @@ describe("App", () => {
           version: 0,
         });
       }
-      if (url.endsWith(`/api/batches/${batchId}`) && init === undefined) {
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
         return json({
           batch_id: batchId,
           state: "finished",
@@ -216,14 +232,13 @@ describe("App", () => {
     expect(
       screen.getByText(messageForCode("vi", "PDF_MALFORMED")),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: viCopy.download })).toHaveLength(
-      1,
-    );
     expect(
-      screen.getByRole("link", { name: viCopy.exportZip }),
-    ).toHaveAttribute("href", `/api/batches/${batchId}/export`);
+      screen.getAllByRole("button", { name: viCopy.download }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: viCopy.exportZip }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("%PDF-synthetic")).not.toBeInTheDocument();
-    vi.unstubAllGlobals();
   });
 });
 
@@ -246,6 +261,16 @@ function documentView(overrides: Partial<DocumentView>): DocumentView {
   };
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.href;
+  }
+  return input.url;
+}
+
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -263,6 +288,9 @@ function mockXhr(response: unknown): { ctor: typeof XMLHttpRequest } {
     onload: (() => void) | null = null;
     onerror: (() => void) | null = null;
     open(): void {
+      return;
+    }
+    setRequestHeader(): void {
       return;
     }
     send(): void {

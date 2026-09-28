@@ -5,7 +5,8 @@ Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D
 Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker, its
 recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
 Stage 13 streams individual downloads and writes the ZIP export in a work directory
-that is deleted when the response finishes. Uninstall follows in Stage 15.
+that is deleted when the response finishes. Stage 14 writes metadata-only logs under
+`data/logs/`. Uninstall follows in Stage 15.
 
 ## 1. Privacy assumptions
 
@@ -58,6 +59,8 @@ File layout (Stages 3 and 4):
   inputs/<uuid4>.pdf|.docx           0400 uploaded copies
   outputs/<uuid4>.pdf|.docx          0400 masked outputs
   work/<uuid4>/                      0700 one directory per upload or processing attempt
+  logs/                              0700 rotated application logs (IDs and codes only)
+    app.log                          0600
   metadata/                          0700 never swept
     jobs.sqlite3 (+ -wal, -shm)      0600 job metadata (no document content)
 ```
@@ -126,7 +129,7 @@ by file permissions (A-2, A-3).
 | ZIP export | Temporary `export.zip` in `data/work/<uuid>/` | Deleted when the download response finishes (the work directory is closed in a background task). If the process dies first, the sweeper removes the work directory after 1 h. There is no `data/exports` directory. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
-| Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |
+| Logs (metadata only: IDs, codes, counts, durations) | `data/logs/app.log` (10 MiB, 7 backups) | Rotated; leftover files stay until HR deletes `data/`. |
 | Original filenames (display only) | Browser tab memory | Tab closed or reloaded. |
 | Extracted text, detected values, decompressed DOCX parts | Worker process memory | Dropped when the document's verification ends, or when the worker process is ended (timeout, crash, shutdown); never written to disk by the app. |
 

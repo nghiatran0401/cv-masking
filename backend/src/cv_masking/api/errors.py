@@ -1,9 +1,12 @@
 """Map domain and application failures to closed error-code HTTP responses."""
 
+import logging
+
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
+from starlette.exceptions import HTTPException
 
 from cv_masking.application.uploads import UploadError
 from cv_masking.domain.codes import ErrorCode
@@ -75,6 +78,14 @@ class ApiError(Exception):
 def status_for(code: ErrorCode) -> int:
     if code is ErrorCode.UPLOAD_TIMEOUT:
         return 408
+    if code is ErrorCode.SECURITY_RATE_LIMITED:
+        return 429
+    if code in {
+        ErrorCode.SECURITY_HOST_REJECTED,
+        ErrorCode.SECURITY_ORIGIN_REJECTED,
+        ErrorCode.SECURITY_TOKEN_INVALID,
+    }:
+        return 403
     if code in _UPLOAD_CONFLICT:
         return 409
     if code in _UPLOAD_TOO_LARGE:
@@ -143,3 +154,15 @@ async def upload_handler(_request: Request, error: Exception) -> JSONResponse:
         document_id=error.document_id,
         limit=error.limit,
     )
+
+
+async def unexpected_handler(_request: Request, error: Exception) -> JSONResponse:
+    logging.getLogger("cv_masking.api").error("unhandled error type=%s", type(error).__name__)
+    return error_response(ErrorCode.INTERNAL_ERROR, 500)
+
+
+async def http_exception_handler(_request: Request, error: Exception) -> JSONResponse:
+    if not isinstance(error, HTTPException):
+        raise error
+    status = error.status_code if error.status_code >= 400 else 500
+    return error_response(ErrorCode.INTERNAL_ERROR, status)

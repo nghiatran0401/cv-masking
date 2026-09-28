@@ -5,6 +5,12 @@ import type {
   DocumentView,
 } from "./types";
 
+const CSRF_HEADER = "X-CSRF-Token";
+const SAFE_DOWNLOAD =
+  /^filename="((?:redacted|masked)-[0-9a-f-]{36}\.(?:pdf|docx|zip))"$/i;
+
+let csrfToken: string | null = null;
+
 export class ApiRequestError extends Error {
   readonly code: string;
   readonly status: number;
@@ -37,8 +43,16 @@ async function readError(response: Response): Promise<ApiRequestError> {
   return new ApiRequestError(response.status, body);
 }
 
+function withAuth(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (csrfToken !== null) {
+    headers.set(CSRF_HEADER, csrfToken);
+  }
+  return { ...init, credentials: "include", headers };
+}
+
 async function request(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init);
+  const response = await fetch(url, withAuth(init));
   if (!response.ok) {
     throw await readError(response);
   }
@@ -52,6 +66,11 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 function versioned(expected_version: number): string {
   return JSON.stringify({ expected_version });
+}
+
+export async function openSession(): Promise<void> {
+  const body = await json<{ csrf_token: string }>("/api/session");
+  csrfToken = body.csrf_token;
 }
 
 export function createBatch(maskSalary: boolean): Promise<BatchView> {
@@ -151,6 +170,37 @@ export function exportUrl(batchId: string): string {
   return `/api/batches/${batchId}/export`;
 }
 
+function filenameFrom(response: Response): string | null {
+  const header = response.headers.get("Content-Disposition");
+  if (header === null) {
+    return null;
+  }
+  for (const part of header.split(";")) {
+    const match = SAFE_DOWNLOAD.exec(part.trim());
+    if (match !== null && match[1] !== undefined) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+export async function downloadFile(url: string): Promise<void> {
+  const response = await request(url);
+  const blob = await response.blob();
+  const name = filenameFrom(response);
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    if (name !== null) {
+      link.download = name;
+    }
+    link.click();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export function uploadDocument(
   batchId: string,
   file: File,
@@ -161,6 +211,10 @@ export function uploadDocument(
     body.append("file", file);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/batches/${batchId}/documents`);
+    xhr.withCredentials = true;
+    if (csrfToken !== null) {
+      xhr.setRequestHeader(CSRF_HEADER, csrfToken);
+    }
     xhr.responseType = "json";
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {

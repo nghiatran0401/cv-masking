@@ -4,9 +4,9 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 13 — localhost HR UI for batch upload, status, findings
-> review, and masked downloads (PDF/DOCX, plus a masked-only ZIP and metadata
-> CSV). See [docs/stage-plan.md](docs/stage-plan.md).
+> **Status:** Stage 14 — loopback Host/Origin checks, a startup session and CSRF
+> token, security headers, rate and size limits, and metadata-only logs. See
+> [docs/stage-plan.md](docs/stage-plan.md).
 
 ## Development (macOS)
 

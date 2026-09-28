@@ -1,6 +1,7 @@
 # Threat model
 
-Status: Stage 0 baseline. Revisit at Stages 5, 10, 11, 14, and 15.
+Status: Stage 14 controls (Host/Origin, session, CSRF, headers, rate limit, metadata
+logging) are in the API. Revisit at Stage 15 for the launcher bootstrap token.
 Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
 [docs/masking-policy.md](docs/masking-policy.md), [docs/supported-pdf.md](docs/supported-pdf.md).
 

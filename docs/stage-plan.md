@@ -27,7 +27,7 @@ then handoff, then **git commit** (D-18).
 | 11b | DOCX verification | Complete (committed) |
 | 12 | Local job queue | Complete (committed) |
 | 13 | HR interface | Complete (committed) |
-| 14 | Runtime hardening | Not started |
+| 14 | Runtime hardening | Complete (committed) |
 | 15 | Local build and launcher | Not started |
 | 16 | Evaluation and release candidate | Not started |
 | — | Windows support (future, unscheduled) | Not defined |
@@ -264,6 +264,8 @@ Execute Stage 14 only. Enforce loopback binding, same-origin serving, strict Hos
 Acceptance: A second network device cannot connect; browser requests without controls fail; security tests pass; no PII is emitted during induced errors.
 
 Stage 0 notes: Decompression limits cover both PDF streams and DOCX archives, including a zip bomb and an XML entity payload.
+
+Stage 14 notes: Host is `127.0.0.1:<port>` or `127.0.0.1:5173` (Vite proxy). Origin is the matching `http://` loopback origins; mutating requests require Origin. `GET /api/health` and `GET /api/session` are the only unauthenticated routes. The session cookie is HttpOnly + SameSite=Strict; CSRF is the `X-CSRF-Token` header (downloads go through `fetch`, not raw links). Rate limit 240 requests / 60 s. Logs are `data/logs/app.log`. Same-origin static serving of the built UI remains Stage 15. See [stage-handoffs/stage-14.md](stage-handoffs/stage-14.md).
 
 ## Stage 15 — Local build and launcher
 Goal: Give HR a one-command macOS experience.

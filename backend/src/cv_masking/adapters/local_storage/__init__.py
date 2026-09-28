@@ -1,6 +1,7 @@
 """Local filesystem storage under the per-user storage root (docs/data-retention.md §3)."""
 
 from cv_masking.adapters.local_storage.root import (
+    LOGS_DIR,
     METADATA_DIR,
     StorageRoot,
     StoreKind,
@@ -11,6 +12,7 @@ from cv_masking.adapters.local_storage.sweeper import LocalStorageSweeper
 from cv_masking.adapters.local_storage.work_area import LocalWorkArea
 
 __all__ = [
+    "LOGS_DIR",
     "METADATA_DIR",
     "LocalInputStore",
     "LocalOutputStore",

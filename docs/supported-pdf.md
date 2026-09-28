@@ -1,7 +1,8 @@
 # Supported input definition (PDF and DOCX)
 
 Status: Stage 0 baseline. Upload checks are enforced in Stage 5, structural
-checks in Stage 6 (PDF) and Stage 6b (DOCX), hardening limits in Stage 14.
+checks in Stage 6 (PDF) and Stage 6b (DOCX). Stage 14 confirmed those resource
+limits and added Host/Origin, session, and log-redaction tests around them.
 §1–§5 cover PDF; §6 covers DOCX.
 
 ## 1. Accepted file types
@@ -32,7 +33,7 @@ Extension and client-supplied content type are advisory; **content decides**.
 | Pages per document | 30 | Validation | `PDF_TOO_MANY_PAGES` |
 | Extractable characters per page | 8 (Stage 6) | Validation | `PDF_NO_TEXT_LAYER` |
 | Zero pages | — | Validation | `PDF_NO_PAGES` |
-| Decompressed stream size / object count | set in Stage 14 | Validation | `PDF_RESOURCE_LIMIT` |
+| Object count (xref length) | 50,000 (Stage 6; confirmed Stage 14) | Validation | `PDF_RESOURCE_LIMIT` |
 | Per-document processing time | 120 s (validation, processing, and verification together; `CV_MASKING_JOB_TIMEOUT_SECONDS`, hard cap 600 s; Stage 12) | Worker (process ended) | `JOB_TIMEOUT` |
 
 ## 3. Structural classification
@@ -102,7 +103,7 @@ synthetic text at test time or committed as `synthetic-*.pdf`.
 
 A DOCX is a ZIP archive of XML parts; it is untrusted input at both layers.
 
-| Check | Default (finalized in Stage 6b; Stage 14 may tighten) | Code |
+| Check | Default (finalized in Stage 6b; Stage 14 confirmed) | Code |
 |---|---|---|
 | File size (compressed) | 20 MB (same as PDF) | `UPLOAD_FILE_TOO_LARGE` |
 | Total uncompressed size | 100 MB | `DOCX_RESOURCE_LIMIT` |

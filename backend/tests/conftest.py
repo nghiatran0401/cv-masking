@@ -18,6 +18,7 @@ from cv_masking.api.app import create_app
 from cv_masking.api.runtime import Runtime, limits_from_settings
 from cv_masking.application import ExportService, JobService, UploadService
 from cv_masking.config import Settings
+from http_support import app_client
 
 
 @pytest.fixture
@@ -117,4 +118,4 @@ def runtime(
 
 @pytest.fixture
 def client(runtime: Runtime) -> TestClient:
-    return TestClient(create_app(runtime))
+    return app_client(create_app(runtime))

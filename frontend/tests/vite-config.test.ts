@@ -17,7 +17,8 @@ describe("vite config", () => {
   it("proxies the API only to the loopback backend", () => {
     expect(BACKEND_ORIGIN).toBe("http://127.0.0.1:8765");
     expect(config.server?.proxy).toEqual({
-      "/api": { target: BACKEND_ORIGIN },
+      "/api": { target: BACKEND_ORIGIN, changeOrigin: true },
     });
+    expect(config.server?.allowedHosts).toEqual(["127.0.0.1"]);
   });
 });

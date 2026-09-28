@@ -13,8 +13,9 @@ export default defineConfig({
     port: DEV_PORT,
     strictPort: true,
     proxy: {
-      "/api": { target: BACKEND_ORIGIN },
+      "/api": { target: BACKEND_ORIGIN, changeOrigin: true },
     },
+    allowedHosts: ["127.0.0.1"],
   },
   preview: {
     host: LOOPBACK_HOST,
