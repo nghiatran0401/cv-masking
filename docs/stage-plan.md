@@ -24,7 +24,7 @@ then handoff, then **git commit** (D-18).
 | 10 | Permanent redaction | Complete (committed) |
 | 10b | DOCX redaction | Complete (committed) |
 | 11 | Independent verification | Complete (committed) |
-| 11b | DOCX verification | Not started |
+| 11b | DOCX verification | Complete (committed) |
 | 12 | Local job queue | Not started |
 | 13 | HR interface | Not started |
 | 14 | Runtime hardening | Not started |
@@ -217,6 +217,8 @@ Execute Stage 11b only. Extend the independent verifier to DOCX: reopen the outp
 Decision D-36 (after Stage 10b): the verifier also fails the output with `VERIFY_RESIDUAL_METADATA` when a style in `styles.xml` sets `w:vanish`/`w:specVanish` and the document uses that style.
 
 Acceptance: Only verification PASSED may transition a DOCX job to COMPLETED; residual data in any part is caught; a used style that hides text fails verification (D-36); the verifier uses a fresh parser/file handle; the limitation that rendering in Microsoft Word is not verified is documented.
+
+Stage 11b notes: besides the value search and the detector rerun (D-37), each DOCX part's text must equal the source text with every redacted range replaced by its label (whitespace ignored), which also covers short values the search skips. See [stage-handoffs/stage-11b.md](stage-handoffs/stage-11b.md).
 
 ## Stage 12 — Local job queue
 Goal: Process large batches without freezing the laptop.

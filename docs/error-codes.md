@@ -176,7 +176,7 @@ broken or mismatched output.
 | `VERIFY_OUTPUT_INVALID` | T | Output does not open or render (PDF), or is not a valid archive/XML package (DOCX). |
 | `VERIFY_PAGE_COUNT_MISMATCH` | T | PDF output page count differs from input. |
 | `VERIFY_STRUCTURE_MISMATCH` | T | DOCX output is missing parts that the input had and the policy did not remove. |
-| `VERIFY_RESIDUAL_FINDING` | T | A source finding is still extractable. |
+| `VERIFY_RESIDUAL_FINDING` | T | A source finding is still extractable, a word remains inside a redacted PDF box, or a DOCX part's text is not exactly the source text with each redacted range replaced by its label. |
 | `VERIFY_RESIDUAL_DETECTION` | T | Rerun of mandatory detectors found new entities. |
 | `VERIFY_RESIDUAL_METADATA` | T | Metadata, attachments, links, or hidden content remain. |
 | `VERIFY_REVIEW` | — | Verifier could not decide; review required. |

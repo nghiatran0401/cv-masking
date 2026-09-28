@@ -10,6 +10,8 @@ masking-policy.md §1.7:
   birth, numbered addresses) is searched for in the output's normalized text
   and in its raw objects;
 - no output word sits inside a redacted PDF finding box, unless it is a label;
+- each DOCX part's text equals the source text with every redacted range
+  replaced by its label (whitespace ignored: emptied paragraphs change breaks);
 - the deterministic Stage 7 detectors, rerun on the output, find nothing the
   policy redacts.
 
@@ -25,6 +27,7 @@ from collections.abc import Iterable, Iterator
 from typing import Final
 
 from cv_masking.application.detection import DetectionOutcome
+from cv_masking.application.mapping import build_docx_ranges
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import BoundingBox, PdfLocation
@@ -64,6 +67,10 @@ _NUMBERED_TYPES: Final = frozenset({EntityType.DATE_OF_BIRTH, EntityType.POSTAL_
 _LABELS: Final = tuple(sorted(set(REPLACEMENT_LABELS.values()), key=len, reverse=True))
 _TOKEN_RE: Final = re.compile(r"[a-z0-9]+")
 _GAP: Final = r"[^a-z0-9]{0,3}"
+_COMBINING_RE: Final = re.compile(
+    "[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]"
+)
+_WHITESPACE_RE: Final = re.compile(r"\s+")
 _DETECTOR_ERRORS: Final = (RuntimeError, ValueError, TypeError, OSError)
 
 
@@ -134,6 +141,8 @@ class VerificationService:
             if _values_remain(source_document, detection, redacted, document, inspection.raw):
                 failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
             if _words_remain_in_boxes(detection, redacted, document):
+                failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
+            if _docx_text_differs(source_document, detection, redacted, document):
                 failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
             try:
                 certain, uncertain = self._rerun(document, redacted)
@@ -229,9 +238,9 @@ def _values_remain(
     raw: tuple[str, ...],
 ) -> bool:
     text = fold("\n".join(part.text for part in output.parts))
-    lowered = tuple(item.lower() for item in raw)
+    folded_raw = tuple(fold(item) for item in raw)
     for pattern in _source_patterns(source, detection, redacted):
-        if pattern.search(text) or any(pattern.search(item) for item in lowered):
+        if pattern.search(text) or any(pattern.search(item) for item in folded_raw):
             return True
     return False
 
@@ -266,6 +275,34 @@ def _words_remain_in_boxes(
             ):
                 return True
     return False
+
+
+def _docx_text_differs(
+    source: ExtractedDocument,
+    detection: DetectionOutcome,
+    redacted: frozenset[EntityType],
+    output: ExtractedDocument,
+) -> bool:
+    kept = [finding for finding in detection.findings if finding.entity_type in redacted]
+    ranges = build_docx_ranges(kept)
+    for part in source.parts:
+        if part.part_name is None:
+            continue
+        expected = part.text
+        for item in sorted(
+            (r for r in ranges if r.part_name == part.part_name),
+            key=lambda r: r.start,
+            reverse=True,
+        ):
+            expected = expected[: item.start] + item.replacement_label + expected[item.end :]
+        actual = _part(output, None, part.part_name)
+        if actual is None or _squeeze(actual.text) != _squeeze(expected):
+            return True
+    return False
+
+
+def _squeeze(text: str) -> str:
+    return _WHITESPACE_RE.sub("", text)
 
 
 def _centre_inside(word: BoundingBox, boxes: Iterable[BoundingBox]) -> bool:

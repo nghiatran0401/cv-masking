@@ -6,6 +6,7 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[2] / "src" / "cv_masking"
 VERIFIER_MODULES = (
     SRC / "adapters" / "pdf" / "verifier.py",
+    SRC / "adapters" / "docx" / "verifier.py",
     SRC / "application" / "verification.py",
     SRC / "ports" / "verification.py",
 )
