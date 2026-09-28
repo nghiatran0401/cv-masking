@@ -1,4 +1,4 @@
-"""Receive one uploaded file into an OPEN batch, without parsing document content."""
+"""Receive one uploaded file into a batch, without parsing document content."""
 
 import logging
 from collections.abc import Iterable
@@ -10,9 +10,9 @@ from cv_masking.application.identify import IdentifiedKind, declared_disagrees, 
 from cv_masking.application.jobs import JobService
 from cv_masking.domain.batch import BatchState
 from cv_masking.domain.codes import ErrorCode
-from cv_masking.domain.document_job import DocumentJob
+from cv_masking.domain.document_job import DocumentJob, DocumentState
 from cv_masking.domain.errors import InvalidTransitionError
-from cv_masking.domain.ids import BatchId
+from cv_masking.domain.ids import BatchId, DocumentId
 from cv_masking.domain.limits import READ_CHUNK_BYTES
 from cv_masking.ports.clock import Clock
 from cv_masking.ports.metadata import ConcurrentUpdateError, RecordKind
@@ -73,18 +73,33 @@ class UploadService:
         *,
         filename: str | None,
         content_type: str | None,
+        replaces: DocumentId | None = None,
     ) -> DocumentJob:
-        """Store one file. ``filename`` is used only to detect spoofing and is then discarded."""
+        """Store one file. ``filename`` is used only to detect spoofing and is then discarded.
+
+        ``replaces`` swaps a FAILED document in this batch (including after start).
+        """
         batch = self._jobs.get_batch(batch_id)
-        if batch.state is not BatchState.OPEN:
+        jobs = self._jobs.list_documents(batch_id)
+        replacing = None
+        if replaces is not None:
+            replacing = next((job for job in jobs if job.document_id == replaces), None)
+            if replacing is None or replacing.state is not DocumentState.FAILED:
+                state = "missing" if replacing is None else replacing.state
+                raise InvalidTransitionError("replace_failed", state)
+        elif batch.state is not BatchState.OPEN:
             raise UploadError(ErrorCode.UPLOAD_BATCH_CLOSED, batch_id=str(batch_id))
-        if batch.document_count >= self._limits.max_files_per_batch:
+        if replacing is None and batch.document_count >= self._limits.max_files_per_batch:
             raise UploadError(
                 ErrorCode.UPLOAD_BATCH_FILE_LIMIT,
                 limit=self._limits.max_files_per_batch,
                 batch_id=str(batch_id),
             )
-        used = sum(job.size_bytes or 0 for job in self._jobs.list_documents(batch_id))
+        used = sum(
+            job.size_bytes or 0
+            for job in jobs
+            if replacing is None or job.document_id != replacing.document_id
+        )
         remaining = self._limits.max_batch_bytes - used
         if remaining < 1:
             raise UploadError(
@@ -103,7 +118,6 @@ class UploadService:
             if oversize_code is ErrorCode.UPLOAD_FILE_TOO_LARGE
             else self._limits.max_batch_bytes
         )
-        job = self._add_document(batch_id)
         deadline = self._clock.now() + timedelta(seconds=self._limits.timeout_seconds)
         try:
             stored = self._accept(
@@ -115,6 +129,14 @@ class UploadService:
                 deadline=deadline,
             )
         except UploadError as refusal:
+            if replacing is not None:
+                raise UploadError(
+                    refusal.code,
+                    limit=oversize_limit if refusal.code is oversize_code else refusal.limit,
+                    document_id=str(replacing.document_id),
+                    batch_id=str(batch_id),
+                ) from None
+            job = self._add_document(batch_id)
             failed = self._jobs.reject_upload(job.document_id, refusal.code)
             logger.info("document %s upload refused code=%s", failed.document_id, refusal.code)
             raise UploadError(
@@ -124,14 +146,29 @@ class UploadService:
                 batch_id=str(batch_id),
             ) from None
         except StorageError as error:
+            if replacing is not None:
+                raise UploadError(
+                    error.code, document_id=str(replacing.document_id), batch_id=str(batch_id)
+                ) from None
+            job = self._add_document(batch_id)
             failed = self._jobs.reject_upload(job.document_id, error.code)
             logger.info("document %s upload refused code=%s", failed.document_id, error.code)
             raise UploadError(
                 error.code, document_id=str(failed.document_id), batch_id=str(batch_id)
             ) from None
+        skip = {replacing.document_id} if replacing is not None else set()
         for existing in self._jobs.list_documents(batch_id):
-            if existing.document_id != job.document_id and existing.content_sha256 == stored.sha256:
+            if existing.document_id in skip:
+                continue
+            if existing.content_sha256 == stored.sha256:
                 self._inputs.delete(stored.ref, stored.document_format)
+                if replacing is not None:
+                    raise UploadError(
+                        ErrorCode.UPLOAD_DUPLICATE,
+                        document_id=str(replacing.document_id),
+                        batch_id=str(batch_id),
+                    )
+                job = self._add_document(batch_id)
                 failed = self._jobs.reject_upload(job.document_id, ErrorCode.UPLOAD_DUPLICATE)
                 logger.info(
                     "document %s upload refused code=%s",
@@ -143,7 +180,11 @@ class UploadService:
                     document_id=str(failed.document_id),
                     batch_id=str(batch_id),
                 )
-        recorded = self._jobs.record_upload(job.document_id, stored)
+        if replacing is not None:
+            recorded = self._jobs.replace_failed_with_upload(replacing.document_id, stored)
+        else:
+            job = self._add_document(batch_id)
+            recorded = self._jobs.record_upload(job.document_id, stored)
         logger.info(
             "document %s uploaded format=%s bytes=%d",
             recorded.document_id,

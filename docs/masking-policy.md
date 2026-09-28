@@ -1,8 +1,8 @@
 # Masking policy
 
-Status: Stage 0 baseline, approved by tech lead. Implemented as the typed
-`MaskingPolicy` in Stage 2. All examples in this document are synthetic; digit
-patterns use `X` placeholders so that no real number appears in the repository.
+Status: policy version 2. Implemented as the typed `MaskingPolicy` in Stage 2.
+All examples in this document are synthetic; digit patterns use `X`
+placeholders so that no real number appears in the repository.
 
 ## 1. Principles
 
@@ -50,15 +50,16 @@ entities (decision D-14).
 | `ETHNICITY` | M | `[REDACTED]` | Value of labeled ethnicity (dân tộc) field. | 7 |
 | `HEALTH` | M | `[REDACTED]` | Labeled health status, height, weight. | 7 |
 | `FAMILY_DETAILS` | M | `[REDACTED]` | Content of a family-information section. | 8 |
-| `PERSONAL_URL` | M | `[URL]` | LinkedIn, GitHub, Facebook, personal sites/portfolios, and messaging handles (Zalo, Skype, Telegram) in contact context. | 7 |
+| `PERSONAL_URL` | **N** | — | LinkedIn, GitHub, Facebook, personal sites/portfolios, and messaging handles (Zalo, Skype, Telegram) stay visible. Clickable hyperlink targets are still stripped as hidden content. | — |
 | `PHOTO` | **N** | — | Not detected or removed in the PoC. Embedded images, including candidate photos, are kept unchanged (D-13). | — |
 | `SALARY` | O (default ON) | `[SALARY]` | Current/expected salary values. | 7 |
 
 Kept (not masked): employers, schools/universities, job titles, skills,
 certifications, languages spoken, employment and education dates, project
 names, city names that appear inside work or education history, a
-referee's job title and company, and — as an accepted PoC limitation (D-13) —
-all embedded images, including candidate photos.
+referee's job title and company, personal URLs and profile links (D-43),
+and — as an accepted PoC limitation (D-13) — all embedded images, including
+candidate photos.
 
 ### Salary toggle
 
@@ -130,8 +131,8 @@ Synthetic example people used in docs and fixtures: **Nguyễn Văn Mẫu**,
 ## 5. Overlap resolution and replacement
 
 - Overlapping findings merge into the union of their boxes; the more specific type wins the
-  label (`NATIONAL_ID` > `PHONE`; `EMAIL` > `PERSONAL_URL`). The full order is
-  `LABEL_PRIORITY` in `domain/policy.py`.
+  label (`NATIONAL_ID` > `PHONE`; `EMAIL` wins over a leftover `PERSONAL_URL` span if one
+  is ever produced). The full order is `LABEL_PRIORITY` in `domain/policy.py`.
 - PDF mapping (Stage 9) works on whole extracted words. A word only partly inside a finding
   (trailing punctuation, a label glued to its value) is redacted whole. Words on one line
   merge into one box only when no unrelated word lies inside the merged box.
@@ -174,10 +175,22 @@ what is pure metadata, and always remove hidden content and report it (D-32).
 | Invisible text (render mode 3, zero opacity), text outside the crop box, white-on-white or sub-2 pt text | Always removed (D-32) | Reported |
 
 PDF hidden-content removal (Stage 10) is fail-closed:
-- Hidden-layer content is cut from the page and form content streams. Each page is
-  rendered before and after, and any difference refuses the output
-  (`REDACT_SANITIZE_FAILED`). This includes layers whose visibility PDF viewers disagree
-  on, such as some membership dictionaries MuPDF draws but the PDF rules hide.
+- Hidden-layer content is cut from the page and form content streams using the
+  PDF membership rules (optional-content groups, membership dictionaries, and
+  `And`/`Or`/`Not` visibility expressions). Named properties may be indirect
+  objects or inline dictionaries; `/OC <<...>> BDC` in the stream is treated
+  the same way. Remaining `/OC` markers are unwrapped so dropping the layer
+  catalog cannot change what is painted.
+- Each page is rendered before and after. An identical render is accepted. A
+  render that changes only inside the boxes of the removed hidden content is
+  also accepted: some viewers (MuPDF) draw spec-hidden membership-dictionary
+  content, and once that content is deleted every viewer agrees. Membership
+  that cannot be parsed (unknown property names, cyclic dictionaries,
+  unsupported visibility operators, indirect objects we cannot walk) is
+  treated as hidden and removed — over-redaction, not a skipped layer. Any
+  other render change, new extractable text, a malformed content stream, or
+  leftover hidden/stripped catalogue after rewrite refuses the output
+  (`REDACT_SANITIZE_FAILED`).
 - Invisible, off-crop, white, or tiny text is removed with fill-less redaction
   annotations, so visible glyphs that overlap it are removed too.
 - The output is reopened and scanned again; any remaining hidden content, stripped

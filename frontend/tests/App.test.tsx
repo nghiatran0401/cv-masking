@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
@@ -99,6 +105,8 @@ describe("App", () => {
               can_approve: false,
               has_output: false,
               finding_counts: null,
+              residual_counts: {},
+              residual_pages: {},
               hidden_removed: {},
               version: 1,
             },
@@ -120,6 +128,8 @@ describe("App", () => {
       can_approve: false,
       has_output: false,
       finding_counts: null,
+      residual_counts: {},
+      residual_pages: {},
       hidden_removed: {},
       version: 1,
     });
@@ -146,6 +156,93 @@ describe("App", () => {
       expect.stringMatching(/^https?:\/\/(?!127\.0\.0\.1)/),
     );
     expect(screen.queryByText("%PDF-synthetic")).not.toBeInTheDocument();
+  });
+
+  it("retries a failed document in a started batch without creating a new one", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const failedId = "00000000-0000-4000-8000-0000000000d2";
+    const retriedId = "00000000-0000-4000-8000-0000000000d3";
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 1,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: failedId,
+              batch_id: batchId,
+              state: "failed",
+              error_code: "REDACT_SANITIZE_FAILED",
+              version: 3,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const xhr = mockXhr(
+      documentView({
+        document_id: failedId,
+        batch_id: batchId,
+        state: "uploaded",
+        version: 1,
+      }),
+    );
+    vi.stubGlobal("XMLHttpRequest", xhr.ctor);
+    render(<App />);
+    const input = document.querySelector('input[type="file"]');
+    fireEvent.change(input as HTMLInputElement, {
+      target: {
+        files: [
+          new File(["%PDF-synthetic\n"], "synthetic-ok.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.retry }),
+      ).toBeInTheDocument();
+    });
+    xhr.opened.length = 0;
+    xhr.setResponse(
+      documentView({
+        document_id: retriedId,
+        batch_id: batchId,
+        state: "uploaded",
+        version: 1,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: viCopy.retry }));
+    await waitFor(() => {
+      expect(xhr.opened).toContain(
+        `/api/batches/${batchId}/documents?replaces=${failedId}`,
+      );
+    });
+    expect(screen.queryByText(viCopy.retryMissing)).not.toBeInTheDocument();
   });
 
   it("shows a failed document beside a completed one and offers only the masked ZIP", async () => {
@@ -191,7 +288,10 @@ describe("App", () => {
               document_id: failedId,
               batch_id: batchId,
               state: "failed",
-              error_code: "PDF_MALFORMED",
+              error_code: "VERIFY_RESIDUAL_DETECTION",
+              has_output: true,
+              residual_counts: { email: 1 },
+              residual_pages: { email: [1] },
               version: 3,
             }),
           ],
@@ -221,7 +321,7 @@ describe("App", () => {
       },
     });
     await waitFor(() => {
-      expect(screen.getByText(viCopy.exportZip)).toBeInTheDocument();
+      expect(screen.getByText(viCopy.downloadAll)).toBeInTheDocument();
     });
     expect(
       screen.getByText(messageForState("vi", "completed")),
@@ -230,17 +330,433 @@ describe("App", () => {
       screen.getByText(messageForState("vi", "failed")),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(messageForCode("vi", "PDF_MALFORMED")),
+      screen.getByText(messageForCode("vi", "VERIFY_RESIDUAL_DETECTION")),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Còn sót, không chia sẻ:/)).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: viCopy.download }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: viCopy.view })).toHaveLength(
+      2,
+    );
     expect(
-      screen.getByRole("button", { name: viCopy.exportZip }),
+      screen.getByRole("button", { name: viCopy.downloadAll }),
     ).toBeInTheDocument();
     expect(screen.queryByText("%PDF-synthetic")).not.toBeInTheDocument();
   });
+
+  it("does not offer a PDF preview for a completed Word file", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const doneId = "00000000-0000-4000-8000-0000000000d1";
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 1,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: doneId,
+              batch_id: batchId,
+              state: "completed",
+              document_format: "docx",
+              has_output: true,
+              version: 4,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    renderAfterUpload(
+      fetchMock,
+      "synthetic-ok.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    await waitFor(() => {
+      expect(screen.getByText(viCopy.downloadAll)).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("button", { name: viCopy.download }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: viCopy.view }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves a completed file as masked_ plus the original file name", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const doneId = "00000000-0000-4000-8000-0000000000d1";
+    const downloads = captureDownloads();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}/documents/${doneId}/download`)
+      ) {
+        return pdfDownload(doneId);
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 1,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: doneId,
+              batch_id: batchId,
+              state: "completed",
+              has_output: true,
+              version: 4,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    renderAfterUpload(fetchMock, "synthetic-cv.pdf");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.download }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.download }));
+    try {
+      await waitFor(() => {
+        expect(downloads.names).toEqual(["masked_synthetic-cv.pdf"]);
+      });
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it("zips only completed files as masked_cvs.zip using original names", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const doneId = "00000000-0000-4000-8000-0000000000d1";
+    const failedId = "00000000-0000-4000-8000-0000000000d2";
+    const downloads = captureDownloads();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}/documents/${doneId}/download`)
+      ) {
+        return pdfDownload(doneId);
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 2,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: doneId,
+              batch_id: batchId,
+              state: "completed",
+              has_output: true,
+              version: 4,
+            }),
+            documentView({
+              document_id: failedId,
+              batch_id: batchId,
+              state: "failed",
+              error_code: "VERIFY_RESIDUAL_DETECTION",
+              has_output: true,
+              residual_counts: { email: 1 },
+              residual_pages: { email: [1] },
+              version: 3,
+            }),
+          ],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    renderAfterUpload(fetchMock, "synthetic-cv.pdf");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.downloadAll }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.downloadAll }));
+    try {
+      await waitFor(() => {
+        expect(downloads.names).toEqual(["masked_cvs.zip"]);
+      });
+      const zip = downloads.blobs[0];
+      if (zip === undefined) {
+        throw new Error("expected a zip blob");
+      }
+      const bytes = new Uint8Array(await zip.arrayBuffer());
+      expect(zipEntryNames(bytes)).toEqual(["masked_synthetic-cv.pdf"]);
+      const requested = fetchMock.mock.calls.map(([input]) =>
+        requestUrl(input),
+      );
+      expect(
+        requested.some(
+          (url) => url.includes(failedId) && url.endsWith("/download"),
+        ),
+      ).toBe(false);
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it("opens a completed PDF in a dialog from the download endpoint and revokes the blob on close", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const doneId = "00000000-0000-4000-8000-0000000000d1";
+    const objectUrl = "blob:http://127.0.0.1/synthetic-preview";
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue(objectUrl);
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 1,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: doneId,
+              batch_id: batchId,
+              state: "completed",
+              has_output: true,
+              version: 4,
+            }),
+          ],
+        });
+      }
+      if (url === `/api/batches/${batchId}/documents/${doneId}/download`) {
+        return pdfDownload(doneId);
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    renderAfterUpload(fetchMock);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.view }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.view }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    expect(screen.getByTitle(viCopy.preview)).toHaveAttribute("src", objectUrl);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: viCopy.closePreview }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(revokeObjectURL).toHaveBeenCalledWith(objectUrl);
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
+  });
+
+  it("lets HR keep or deny a review PDF from the preview dialog", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const reviewId = "00000000-0000-4000-8000-0000000000d1";
+    const objectUrl = "blob:http://127.0.0.1/synthetic-review";
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue(objectUrl);
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (
+        url.endsWith(`/api/batches/${batchId}`) &&
+        init?.method !== "POST" &&
+        init?.method !== "PATCH" &&
+        init?.method !== "DELETE"
+      ) {
+        return json({
+          batch_id: batchId,
+          state: "finished",
+          mask_salary: true,
+          document_count: 1,
+          version: 4,
+          documents: [
+            documentView({
+              document_id: reviewId,
+              batch_id: batchId,
+              state: "review_required",
+              has_output: true,
+              can_approve: true,
+              review_reasons: ["DETECT_LOW_CONFIDENCE"],
+              version: 4,
+            }),
+          ],
+        });
+      }
+      if (url === `/api/batches/${batchId}/documents/${reviewId}/download`) {
+        return pdfDownload(reviewId);
+      }
+      if (
+        url === `/api/batches/${batchId}/documents/${reviewId}/approve` &&
+        init?.method === "POST"
+      ) {
+        return json(
+          documentView({
+            document_id: reviewId,
+            batch_id: batchId,
+            state: "completed",
+            has_output: true,
+            version: 5,
+          }),
+        );
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    renderAfterUpload(fetchMock);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.view }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.view }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("button", { name: viCopy.keep }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: viCopy.deny }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: viCopy.keep }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/batches/${batchId}/documents/${reviewId}/approve`,
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
+  });
 });
+
+function pdfDownload(documentId: string): Response {
+  return new Response("%PDF-synthetic-masked\n", {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="redacted-${documentId}.pdf"`,
+    },
+  });
+}
+
+function renderAfterUpload(
+  fetchMock: ReturnType<typeof vi.fn>,
+  filename = "synthetic-ok.pdf",
+  type = "application/pdf",
+): void {
+  vi.stubGlobal("fetch", fetchMock);
+  const xhr = mockXhr(
+    documentView({
+      document_id: "00000000-0000-4000-8000-0000000000d1",
+      batch_id: "00000000-0000-4000-8000-0000000000aa",
+      state: "uploaded",
+      version: 1,
+    }),
+  );
+  vi.stubGlobal("XMLHttpRequest", xhr.ctor);
+  render(<App />);
+  const input = document.querySelector('input[type="file"]');
+  fireEvent.change(input as HTMLInputElement, {
+    target: {
+      files: [new File(["%PDF-synthetic\n"], filename, { type })],
+    },
+  });
+}
 
 function documentView(overrides: Partial<DocumentView>): DocumentView {
   return {
@@ -256,6 +772,8 @@ function documentView(overrides: Partial<DocumentView>): DocumentView {
     has_output: false,
     finding_counts: null,
     hidden_removed: {},
+    residual_counts: {},
+    residual_pages: {},
     version: 1,
     ...overrides,
   };
@@ -271,6 +789,56 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function captureDownloads(): {
+  names: string[];
+  blobs: Blob[];
+  restore: () => void;
+} {
+  const names: string[] = [];
+  const blobs: Blob[] = [];
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+  const create = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+    if (blob instanceof Blob) {
+      blobs.push(blob);
+    }
+    return "blob:http://127.0.0.1/synthetic-download";
+  });
+  const revoke = vi
+    .spyOn(URL, "revokeObjectURL")
+    .mockImplementation(() => undefined);
+  return {
+    names,
+    blobs,
+    restore: () => {
+      click.mockRestore();
+      create.mockRestore();
+      revoke.mockRestore();
+    },
+  };
+}
+
+function zipEntryNames(bytes: Uint8Array): string[] {
+  const names: string[] = [];
+  const decoder = new TextDecoder();
+  let offset = 0;
+  while (offset + 30 <= bytes.byteLength) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset + offset);
+    if (view.getUint32(0, true) !== 0x04034b50) {
+      break;
+    }
+    const size = view.getUint32(18, true);
+    const nameLen = view.getUint16(26, true);
+    const extraLen = view.getUint16(28, true);
+    names.push(decoder.decode(bytes.slice(offset + 30, offset + 30 + nameLen)));
+    offset += 30 + nameLen + extraLen + size;
+  }
+  return names;
+}
+
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -278,24 +846,37 @@ function json(body: unknown): Response {
   });
 }
 
-function mockXhr(response: unknown): { ctor: typeof XMLHttpRequest } {
+function mockXhr(response: unknown): {
+  ctor: typeof XMLHttpRequest;
+  opened: string[];
+  setResponse: (next: unknown) => void;
+} {
+  const opened: string[] = [];
+  let current = response;
   class FakeXHR {
     status = 201;
-    response = response;
+    response = current;
     upload = {
       onprogress: null as ((event: ProgressEvent) => void) | null,
     };
     onload: (() => void) | null = null;
     onerror: (() => void) | null = null;
-    open(): void {
-      return;
+    open(_method: string, url: string): void {
+      opened.push(url);
     }
     setRequestHeader(): void {
       return;
     }
     send(): void {
+      this.response = current;
       this.onload?.();
     }
   }
-  return { ctor: FakeXHR as unknown as typeof XMLHttpRequest };
+  return {
+    ctor: FakeXHR as unknown as typeof XMLHttpRequest,
+    opened,
+    setResponse: (next: unknown) => {
+      current = next;
+    },
+  };
 }

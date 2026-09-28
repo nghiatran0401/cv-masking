@@ -73,7 +73,6 @@ def corpus() -> tuple[ExtractedDocument, list[tuple[EntityType, int, int]]]:
         (EntityType.POSTAL_ADDRESS, *gold_span(text, "12 Pho Mau, Ha Noi")),
         (EntityType.DATE_OF_BIRTH, *gold_span(text, "01/01/1990")),
         (EntityType.SALARY, *gold_span(text, "20.000.000 VND")),
-        (EntityType.PERSONAL_URL, *gold_span(text, URL)),
         (EntityType.EMAIL, *gold_span(text, REF_EMAIL)),
     ]
     return extracted(text), expected

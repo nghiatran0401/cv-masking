@@ -16,6 +16,7 @@ from typing import Final
 from cv_masking.domain._validation import require_bool, require_int, require_utc
 from cv_masking.domain.codes import (
     ERROR_CODE_GROUPS,
+    INSPECTABLE_FAILURE_CODES,
     POST_PROCESSING_REVIEW_KINDS,
     REVIEW_REASON_KINDS,
     VALIDATION_REVIEW_KINDS,
@@ -166,6 +167,15 @@ class DocumentJob:
             and kinds == {ReviewKind.FINDINGS}
             and self._verification_passed()
         )
+
+    @property
+    def has_downloadable_output(self) -> bool:
+        """HR may open COMPLETED, findings-held, and inspectable residual failures (D-46)."""
+        if self.output_ref is None:
+            return False
+        if self.state in {DocumentState.COMPLETED, DocumentState.REVIEW_REQUIRED}:
+            return True
+        return self.state is DocumentState.FAILED and self.error_code in INSPECTABLE_FAILURE_CODES
 
     # ------------------------------------------------------------------ upload
 

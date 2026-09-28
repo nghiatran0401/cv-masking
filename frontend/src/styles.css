@@ -113,3 +113,64 @@ td {
   padding: 0.5rem 0.4rem;
   vertical-align: top;
 }
+
+.preview-dialog {
+  width: min(56rem, 96vw);
+  height: min(90vh, 52rem);
+  max-height: 90vh;
+  padding: 0;
+  border: 1px solid #555555;
+  flex-direction: column;
+}
+
+.preview-dialog[open] {
+  display: flex;
+}
+
+.preview-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #cccccc;
+}
+
+.preview-toolbar h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.preview-filename {
+  flex: 1;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.residual {
+  color: #8b0000;
+}
+
+.preview-status {
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.preview-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+  background: #f4f4f4;
+}
+
+.preview-review {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #cccccc;
+}

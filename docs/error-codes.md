@@ -47,9 +47,12 @@ stateDiagram-v2
 ```
 
 Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`. Individual
-downloads are available for `COMPLETED` and for `REVIEW_REQUIRED` documents that
+downloads are available for `COMPLETED`, for `REVIEW_REQUIRED` documents that
 already have a verified output (HR inspects the masked file before keep or
-delete). The ZIP export includes only `COMPLETED` files plus the metadata CSV.
+delete), and for `FAILED` residual-verification leaks (`VERIFY_RESIDUAL_*`,
+D-46). Those residual files are inspection-only: they still contain unmasked
+values, they cannot become `COMPLETED`, and they are not in the ZIP. The ZIP
+export includes only `COMPLETED` files plus the metadata CSV.
 `COMPLETED` is reachable **only** with a verification `PASSED` result: either
 directly, or when HR approves findings-only review reasons on an output that
 already passed. A verifier `REVIEW_REQUIRED` result can never be approved into
@@ -63,7 +66,8 @@ own within the time budget. `REVIEW_REQUIRED` uses deny.
 `interrupt` fails a held document with `JOB_INTERRUPTED`. It is used at startup
 for documents a previous run left mid-processing, and at shutdown when the
 document in progress does not finish within the grace period (Stage 12). There is
-no automatic re-run: HR re-uploads the file.
+no automatic re-run: HR clicks **Thử lại** (or Retry) to re-upload the same
+browser file into this batch.
 
 ### Review reasons
 
@@ -89,14 +93,17 @@ Hidden content is never a review reason (D-32). It is always removed; the
 categories and counts found are stored on the document (`document_hidden_content`)
 and shown to HR as an alert.
 
-Batch states: `OPEN` (accepting uploads; salary toggle editable) → `RUNNING`
-(toggle locked) → `FINISHED` (all documents terminal or `REVIEW_REQUIRED`).
+Batch states: `OPEN` (accepting new uploads; salary toggle editable) → `RUNNING`
+(toggle locked; new extra files refused; a FAILED document may be replaced by
+**Thử lại**) → `FINISHED` (all documents terminal or `REVIEW_REQUIRED`).
+**Thử lại** on a FAILED document returns a finished batch to `RUNNING`.
 `PURGED` is reachable from any state.
 
 ## 3. Codes
 
-`R` = retryable: HR may re-upload the same file into the batch; `T` = re-uploading the
-same file will fail the same way. A `—` code is not an error but a review reason.
+`R` = retryable: HR may re-upload the same file into the batch with **Thử lại**,
+including after the batch has started; `T` = the same bytes will fail the same
+way unless the app itself has changed. A `—` code is not an error but a review reason.
 Error codes put the document in `FAILED` (terminal); `—` rows put it in
 `REVIEW_REQUIRED` (see the review-reason table in §2). Per retention decision D-06 the
 input is deleted at a terminal state, so a retry is always a fresh upload.
@@ -114,7 +121,7 @@ input is deleted at a terminal state, so a retry is always a fresh upload.
 | `UPLOAD_DUPLICATE` | T | Same content hash already in this batch. |
 | `UPLOAD_MALFORMED_REQUEST` | R | Multipart request invalid or incomplete. |
 | `UPLOAD_TIMEOUT` | R | Upload did not finish within the request timeout. |
-| `UPLOAD_BATCH_CLOSED` | T | Batch is no longer accepting uploads. |
+| `UPLOAD_BATCH_CLOSED` | T | New extra files are refused once the batch has started. Replacing a FAILED row (**Thử lại**) is allowed. |
 
 ### PDF validation and extraction (Stage 6)
 
@@ -195,9 +202,11 @@ broken or mismatched output.
 | `SECURITY_RATE_LIMITED` | R | Too many requests. |
 | `INTERNAL_ERROR` | R | Unexpected error; details not exposed. |
 
-There are no automatic retries (D-33): a document runs once, and any partial
-output is deleted when it fails. A retry is always a fresh upload, which gets a new
-document id, input id, and output id.
+There are no automatic retries (D-33): a document runs once. A retry is a fresh
+upload into the same batch (new document id, input id, and output id) that
+replaces the failed row. Residual verification failures keep the masked file so
+HR can inspect leftover *types and pages* (never values); other failures delete
+the output.
 
 Blocking review reasons (`PDF_ENCRYPTED`, `PDF_TOO_MANY_PAGES`, `PDF_NO_TEXT_LAYER`,
 `PDF_TEXT_UNRELIABLE`, `DOCX_ENCRYPTED`, `DOCX_TOO_LARGE_TEXT`, `DOCX_NO_TEXT`) put the

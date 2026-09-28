@@ -293,7 +293,7 @@ def test_partial_overlap_merges_into_one_box() -> None:
     outcome = _outcome(
         document,
         _match(EntityType.EMAIL, (0, 3)),
-        _match(EntityType.PERSONAL_URL, (2, 5)),
+        _match(EntityType.PHONE, (2, 5)),
     )
     assert len(outcome.regions) == 1
     region = outcome.regions[0]

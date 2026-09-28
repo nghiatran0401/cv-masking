@@ -2,9 +2,12 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type DragEvent,
+  type RefObject,
 } from "react";
 
 import {
@@ -16,15 +19,22 @@ import {
   denyDocument,
   downloadFile,
   downloadUrl,
-  exportUrl,
+  fetchMaskedFile,
   getBatch,
+  isPdfBlob,
   openSession,
   purgeBatch,
   removeDocument,
+  saveBlob,
   setMaskSalary,
   startBatch,
   uploadDocument,
 } from "./api";
+import {
+  ALL_MASKED_ZIP_NAME,
+  maskedDownloadName,
+  uniqueDownloadName,
+} from "./downloadNames";
 import {
   MESSAGES,
   type Language,
@@ -35,6 +45,7 @@ import {
   saveLanguage,
 } from "./i18n";
 import type { BatchDetail, DocumentState, DocumentView } from "./types";
+import { zipStoreBlob, type ZipEntry } from "./zip";
 
 const POLL_MS = 1500;
 const ACCEPT =
@@ -66,6 +77,44 @@ function canCancel(state: DocumentState): boolean {
   return state === "created" || state === "uploaded" || state === "queued";
 }
 
+function completedMasked(documents: readonly DocumentView[]): DocumentView[] {
+  return documents.filter((job) => job.state === "completed" && job.has_output);
+}
+
+function canDownload(job: DocumentView): boolean {
+  switch (job.state) {
+    case "completed":
+    case "review_required":
+      return job.has_output;
+    case "created":
+    case "uploaded":
+    case "validating":
+    case "queued":
+    case "processing":
+    case "verifying":
+    case "failed":
+      return job.has_output;
+    case "rejected":
+    case "cancelled":
+      return false;
+    default: {
+      const exhausted: never = job.state;
+      return exhausted;
+    }
+  }
+}
+
+function canPreview(job: DocumentView): boolean {
+  return canDownload(job) && job.document_format === "pdf";
+}
+
+type PdfPreview = {
+  job: DocumentView;
+  label: string;
+  objectUrl: string | null;
+  failed: boolean;
+};
+
 function countsList(
   counts: Record<string, number> | null,
   labels: Record<string, string>,
@@ -79,6 +128,25 @@ function countsList(
   return parts.length === 0 ? "—" : parts.join(", ");
 }
 
+function residualList(
+  counts: Record<string, number>,
+  pages: Record<string, number[]>,
+  labels: Record<string, string>,
+  pageLabel: string,
+): string {
+  const parts = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => {
+      const name = `${labels[key] ?? key} ${String(count)}`;
+      const where = pages[key];
+      if (where === undefined || where.length === 0) {
+        return name;
+      }
+      return `${name} (${pageLabel} ${where.join(", ")})`;
+    });
+  return parts.join(", ");
+}
+
 function newKey(): string {
   return crypto.randomUUID();
 }
@@ -90,6 +158,7 @@ export function App() {
   const [locals, setLocals] = useState<LocalFile[]>([]);
   const [maskSalary, setMaskSalaryState] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const t = MESSAGES[language];
@@ -289,18 +358,33 @@ export function App() {
 
   const retry = async (documentId: string): Promise<void> => {
     const file = fileFor(documentId);
-    if (file === undefined) {
-      return;
-    }
-    if (!isOpen(batch) || batch === null) {
-      setNotice(t.retryClosed);
+    if (file === undefined || batch === null) {
+      setNotice(t.retryMissing);
       return;
     }
     setBusy(true);
+    setNotice(null);
     try {
-      await removeDocument(batch.batch_id, documentId);
-      setLocals((rows) => rows.filter((row) => row.documentId !== documentId));
-      await applyFiles([file]);
+      const uploaded = await uploadDocument(
+        batch.batch_id,
+        file,
+        () => undefined,
+        documentId,
+      );
+      setLocals((rows) =>
+        rows.map((row) =>
+          row.documentId === documentId
+            ? {
+                ...row,
+                documentId: uploaded.document_id,
+                progress: 100,
+                uploading: false,
+                errorCode: uploaded.error_code,
+              }
+            : row,
+        ),
+      );
+      await refresh(batch.batch_id);
     } catch (error: unknown) {
       if (error instanceof ApiRequestError) {
         setNotice(messageForCode(language, error.code));
@@ -310,8 +394,48 @@ export function App() {
     }
   };
 
-  const completed =
-    batch?.documents.filter((job) => job.state === "completed") ?? [];
+  const onDownloadAll = async (): Promise<void> => {
+    if (batch === null || exporting) {
+      return;
+    }
+    const jobs = completedMasked(batch.documents);
+    if (jobs.length === 0) {
+      return;
+    }
+    setExporting(true);
+    setNotice(null);
+    try {
+      const used = new Set<string>();
+      const entries: ZipEntry[] = [];
+      for (const job of jobs) {
+        const { blob } = await fetchMaskedFile(
+          downloadUrl(batch.batch_id, job.document_id),
+        );
+        entries.push({
+          name: uniqueDownloadName(
+            maskedDownloadName(
+              names.get(job.document_id),
+              job.document_format,
+              job.document_id,
+            ),
+            used,
+          ),
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+        });
+      }
+      saveBlob(zipStoreBlob(entries), ALL_MASKED_ZIP_NAME);
+    } catch (error: unknown) {
+      setNotice(
+        error instanceof ApiRequestError
+          ? messageForCode(language, error.code)
+          : messageForCode(language, "INTERNAL_ERROR"),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const completed = completedMasked(batch?.documents ?? []);
 
   return (
     <main className="app">
@@ -387,19 +511,12 @@ export function App() {
             <button
               type="button"
               className="button-link"
+              disabled={exporting}
               onClick={() => {
-                void downloadFile(exportUrl(batch.batch_id)).catch(
-                  (error: unknown) => {
-                    setNotice(
-                      error instanceof ApiRequestError
-                        ? messageForCode(language, error.code)
-                        : messageForCode(language, "INTERNAL_ERROR"),
-                    );
-                  },
-                );
+                void onDownloadAll();
               }}
             >
-              {t.exportZip}
+              {exporting ? t.busy : t.downloadAll}
             </button>
           ) : null}
         </div>
@@ -485,7 +602,14 @@ export function App() {
         }}
         onDownload={async (job) => {
           try {
-            await downloadFile(downloadUrl(job.batch_id, job.document_id));
+            await downloadFile(
+              downloadUrl(job.batch_id, job.document_id),
+              maskedDownloadName(
+                names.get(job.document_id),
+                job.document_format,
+                job.document_id,
+              ),
+            );
           } catch (error: unknown) {
             setNotice(
               error instanceof ApiRequestError
@@ -526,91 +650,294 @@ function FileTable({
 }) {
   const pending = locals.filter((row) => row.documentId === null);
   const jobs = batch?.documents ?? [];
+  const previewGeneration = useRef(0);
+  const objectUrlRef = useRef<string | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [preview, setPreview] = useState<PdfPreview | null>(null);
+
+  const forgetObjectUrl = (): void => {
+    if (objectUrlRef.current !== null) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  };
+
+  const closePreview = (): void => {
+    previewGeneration.current += 1;
+    forgetObjectUrl();
+    setPreview(null);
+  };
+
+  const openPreview = async (
+    job: DocumentView,
+    label: string,
+  ): Promise<void> => {
+    const gen = ++previewGeneration.current;
+    forgetObjectUrl();
+    setPreview({ job, label, objectUrl: null, failed: false });
+    try {
+      const { blob } = await fetchMaskedFile(
+        downloadUrl(job.batch_id, job.document_id),
+      );
+      if (gen !== previewGeneration.current) {
+        return;
+      }
+      if (!isPdfBlob(blob)) {
+        setPreview({ job, label, objectUrl: null, failed: true });
+        return;
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      objectUrlRef.current = objectUrl;
+      setPreview({ job, label, objectUrl, failed: false });
+    } catch {
+      if (gen !== previewGeneration.current) {
+        return;
+      }
+      setPreview({ job, label, objectUrl: null, failed: true });
+    }
+  };
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (preview === null || dialog === null || dialog.open) {
+      return;
+    }
+    if (typeof dialog.showModal === "function") {
+      try {
+        dialog.showModal();
+        return;
+      } catch {
+        // jsdom and some test hosts do not implement modal dialogs
+      }
+    }
+    dialog.setAttribute("open", "");
+  }, [preview]);
+
+  useEffect(() => {
+    const generation = previewGeneration;
+    const heldUrl = objectUrlRef;
+    return () => {
+      generation.current += 1;
+      if (heldUrl.current !== null) {
+        URL.revokeObjectURL(heldUrl.current);
+        heldUrl.current = null;
+      }
+    };
+  }, []);
+
   if (jobs.length === 0 && pending.length === 0) {
     return <p>{t.empty}</p>;
   }
   return (
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">{t.file}</th>
-          <th scope="col">{t.status}</th>
-          <th scope="col">{t.findings}</th>
-          <th scope="col">{t.hidden}</th>
-          <th scope="col">{t.actions}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {pending.map((row) => (
-          <tr key={row.key}>
-            <td>{row.file.name}</td>
-            <td>
-              {row.uploading
-                ? `${t.uploading} ${String(row.progress)}%`
-                : row.errorCode !== null
-                  ? messageForCode(language, row.errorCode)
-                  : "—"}
-            </td>
-            <td>—</td>
-            <td>—</td>
-            <td />
+    <>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{t.file}</th>
+            <th scope="col">{t.status}</th>
+            <th scope="col">{t.findings}</th>
+            <th scope="col">{t.hidden}</th>
+            <th scope="col">{t.actions}</th>
           </tr>
-        ))}
-        {jobs.map((job) => {
-          const label =
-            names.get(job.document_id) ??
-            job.document_format ??
-            job.document_id.slice(0, 8);
-          return (
-            <tr key={job.document_id}>
-              <td>{label}</td>
+        </thead>
+        <tbody>
+          {pending.map((row) => (
+            <tr key={row.key}>
+              <td>{row.file.name}</td>
               <td>
-                <div>{messageForState(language, job.state)}</div>
-                {job.error_code !== null ? (
-                  <div>{messageForCode(language, job.error_code)}</div>
-                ) : null}
-                {job.review_reasons.map((reason) => (
-                  <div key={reason}>{messageForReason(language, reason)}</div>
-                ))}
+                {row.uploading
+                  ? `${t.uploading} ${String(row.progress)}%`
+                  : row.errorCode !== null
+                    ? messageForCode(language, row.errorCode)
+                    : "—"}
               </td>
-              <td>{countsList(job.finding_counts, t.entities)}</td>
-              <td>{countsList(job.hidden_removed, t.hiddenKinds)}</td>
-              <td className="actions">
-                {canCancel(job.state) ? (
-                  <button type="button" onClick={() => void onCancel(job)}>
-                    {t.cancel}
-                  </button>
-                ) : null}
-                {isOpen(batch) ? (
-                  <button type="button" onClick={() => void onRemove(job)}>
-                    {t.remove}
-                  </button>
-                ) : null}
-                {job.state === "failed" && names.has(job.document_id) ? (
-                  <button type="button" onClick={() => void onRetry(job)}>
-                    {t.retry}
-                  </button>
-                ) : null}
-                {job.has_output ? (
-                  <button type="button" onClick={() => void onDownload(job)}>
-                    {t.download}
-                  </button>
-                ) : null}
-                {job.can_approve ? (
-                  <button type="button" onClick={() => void onKeep(job)}>
-                    {t.keep}
-                  </button>
-                ) : null}
-                {job.state === "review_required" ? (
-                  <button type="button" onClick={() => void onDeny(job)}>
-                    {t.deny}
-                  </button>
-                ) : null}
-              </td>
+              <td>—</td>
+              <td>—</td>
+              <td />
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
+          ))}
+          {jobs.map((job) => {
+            const label =
+              names.get(job.document_id) ??
+              job.document_format ??
+              job.document_id.slice(0, 8);
+            return (
+              <tr key={job.document_id}>
+                <td>{label}</td>
+                <td>
+                  <div>{messageForState(language, job.state)}</div>
+                  {job.error_code !== null ? (
+                    <div>{messageForCode(language, job.error_code)}</div>
+                  ) : null}
+                  {Object.keys(job.residual_counts).length > 0 ? (
+                    <div className="residual">
+                      {t.residual}{" "}
+                      {residualList(
+                        job.residual_counts,
+                        job.residual_pages,
+                        t.entities,
+                        t.residualPage,
+                      )}
+                    </div>
+                  ) : null}
+                  {job.review_reasons.map((reason) => (
+                    <div key={reason}>{messageForReason(language, reason)}</div>
+                  ))}
+                </td>
+                <td>{countsList(job.finding_counts, t.entities)}</td>
+                <td>{countsList(job.hidden_removed, t.hiddenKinds)}</td>
+                <td className="actions">
+                  {canCancel(job.state) ? (
+                    <button type="button" onClick={() => void onCancel(job)}>
+                      {t.cancel}
+                    </button>
+                  ) : null}
+                  {isOpen(batch) ? (
+                    <button type="button" onClick={() => void onRemove(job)}>
+                      {t.remove}
+                    </button>
+                  ) : null}
+                  {job.state === "failed" && names.has(job.document_id) ? (
+                    <button type="button" onClick={() => void onRetry(job)}>
+                      {t.retry}
+                    </button>
+                  ) : null}
+                  {canPreview(job) ? (
+                    <button
+                      type="button"
+                      onClick={() => void openPreview(job, label)}
+                    >
+                      {t.view}
+                    </button>
+                  ) : null}
+                  {canDownload(job) ? (
+                    <button type="button" onClick={() => void onDownload(job)}>
+                      {t.download}
+                    </button>
+                  ) : null}
+                  {job.can_approve ? (
+                    <button type="button" onClick={() => void onKeep(job)}>
+                      {t.keep}
+                    </button>
+                  ) : null}
+                  {job.state === "review_required" ? (
+                    <button type="button" onClick={() => void onDeny(job)}>
+                      {t.deny}
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {preview !== null ? (
+        <MaskedPdfDialog
+          dialogRef={dialogRef}
+          preview={preview}
+          t={t}
+          onClose={closePreview}
+          onKeep={onKeep}
+          onDeny={onDeny}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function MaskedPdfDialog({
+  dialogRef,
+  preview,
+  t,
+  onClose,
+  onKeep,
+  onDeny,
+}: {
+  dialogRef: RefObject<HTMLDialogElement | null>;
+  preview: PdfPreview;
+  t: (typeof MESSAGES)[Language];
+  onClose: () => void;
+  onKeep: (job: DocumentView) => Promise<void>;
+  onDeny: (job: DocumentView) => Promise<void>;
+}) {
+  const headingId = useId();
+  const requestClose = (): void => {
+    const dialog = dialogRef.current;
+    if (dialog !== null && dialog.open && typeof dialog.close === "function") {
+      dialog.close();
+    }
+    onClose();
+  };
+  return (
+    <dialog
+      ref={dialogRef}
+      className="preview-dialog"
+      aria-labelledby={headingId}
+      onClose={onClose}
+    >
+      <div className="preview-toolbar">
+        <h2 id={headingId}>{t.preview}</h2>
+        <p className="preview-filename">{preview.label}</p>
+        <button type="button" onClick={requestClose}>
+          {t.closePreview}
+        </button>
+      </div>
+      {preview.failed ? (
+        <p className="error preview-status" role="alert">
+          {t.previewFailed}
+        </p>
+      ) : null}
+      {!preview.failed && preview.objectUrl === null ? (
+        <p className="preview-status" role="status">
+          {t.previewLoading}
+        </p>
+      ) : null}
+      {preview.job.state === "failed" ? (
+        <p className="error preview-status" role="alert">
+          {t.unsafeOutput}
+          {Object.keys(preview.job.residual_counts).length > 0
+            ? ` ${residualList(
+                preview.job.residual_counts,
+                preview.job.residual_pages,
+                t.entities,
+                t.residualPage,
+              )}`
+            : ""}
+        </p>
+      ) : null}
+      {preview.objectUrl !== null ? (
+        <iframe
+          className="preview-frame"
+          title={t.preview}
+          src={preview.objectUrl}
+        />
+      ) : null}
+      {preview.job.state === "review_required" ? (
+        <div className="actions preview-review">
+          {preview.job.can_approve ? (
+            <button
+              type="button"
+              onClick={() => {
+                const job = preview.job;
+                requestClose();
+                void onKeep(job);
+              }}
+            >
+              {t.keep}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              const job = preview.job;
+              requestClose();
+              void onDeny(job);
+            }}
+          >
+            {t.deny}
+          </button>
+        </div>
+      ) : null}
+    </dialog>
   );
 }

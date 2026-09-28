@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from cv_masking.application import JobService, UploadService
 from cv_masking.config import Settings
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.document_job import DocumentState
+from cv_masking.domain.ids import DocumentId
 from http_support import app_client
 
 
@@ -146,6 +148,34 @@ def test_closed_batch_rejects_new_uploads(client: TestClient) -> None:
     response = _send(client, batch_id, SYNTHETIC_PDF + b"% extra\n")
     assert response.status_code == 409
     assert response.json()["code"] == ErrorCode.UPLOAD_BATCH_CLOSED
+
+
+def test_retry_replaces_a_failed_document_after_start(
+    client: TestClient, service: JobService
+) -> None:
+    batch_id = client.post("/api/batches", json={}).json()["batch_id"]
+    first = _send(client, batch_id, SYNTHETIC_PDF)
+    failed_id = first.json()["document_id"]
+    version = client.get(f"/api/batches/{batch_id}").json()["version"]
+    client.post(f"/api/batches/{batch_id}/start", json={"expected_version": version})
+    document_id = DocumentId(UUID(failed_id))
+    service.apply(document_id, lambda job, at: job.start_validation(at))
+    service.apply(document_id, lambda job, at: job.fail(ErrorCode.INTERNAL_ERROR, at))
+    retry = client.post(
+        f"/api/batches/{batch_id}/documents",
+        params={"replaces": failed_id},
+        files={"file": ("synthetic.pdf", SYNTHETIC_PDF, "application/pdf")},
+    )
+    assert retry.status_code == 201
+    assert retry.json()["document_id"] != failed_id
+    assert retry.json()["state"] == DocumentState.UPLOADED.value
+    status = client.get(f"/api/batches/{batch_id}").json()
+    assert status["state"] == "running"
+    assert status["document_count"] == 1
+    assert {row["document_id"] for row in status["documents"]} == {retry.json()["document_id"]}
+    extra = _send(client, batch_id, SYNTHETIC_PDF + b"% extra\n")
+    assert extra.status_code == 409
+    assert extra.json()["code"] == ErrorCode.UPLOAD_BATCH_CLOSED
 
 
 def test_purge_removes_the_batch(client: TestClient, root: StorageRoot) -> None:

@@ -1,7 +1,8 @@
-"""Masking policy (docs/masking-policy.md, policy version 1).
+"""Masking policy (docs/masking-policy.md, policy version 2).
 
 Mandatory entity types cannot be disabled: the only HR-selectable setting is
 the salary toggle. Thresholds and labels are fixed per policy version.
+Jobs stored under version 1 still load; new jobs record version 2.
 """
 
 from collections.abc import Iterable, Mapping
@@ -13,7 +14,8 @@ from typing import Final
 from cv_masking.domain._validation import require_bool, require_finite_float
 from cv_masking.domain.errors import InvariantError, PolicyError
 
-POLICY_VERSION: Final = "1"
+POLICY_VERSION: Final = "2"
+KNOWN_POLICY_VERSIONS: Final = frozenset({"1", "2"})
 REDACT_THRESHOLD: Final = 0.85
 DISCARD_THRESHOLD: Final = 0.50
 
@@ -39,7 +41,10 @@ class EntityType(StrEnum):
 
 
 OPTIONAL_ENTITY_TYPES: Final = frozenset({EntityType.SALARY})
-MANDATORY_ENTITY_TYPES: Final = frozenset(EntityType) - OPTIONAL_ENTITY_TYPES
+UNHANDLED_ENTITY_TYPES: Final = frozenset({EntityType.PERSONAL_URL})
+MANDATORY_ENTITY_TYPES: Final = (
+    frozenset(EntityType) - OPTIONAL_ENTITY_TYPES - UNHANDLED_ENTITY_TYPES
+)
 
 REPLACEMENT_LABELS: Final[Mapping[EntityType, str]] = MappingProxyType(
     {
@@ -111,7 +116,7 @@ class MaskingPolicy:
 
     def __post_init__(self) -> None:
         require_bool(self.mask_salary, "MaskingPolicy.mask_salary")
-        if self.version != POLICY_VERSION:
+        if self.version not in KNOWN_POLICY_VERSIONS:
             raise PolicyError("MaskingPolicy.version is not a known policy version")
 
     @classmethod

@@ -67,6 +67,7 @@ OTHER_HEADINGS: Final = (
     "hobbies",
     "objective",
     "career objective",
+    "expectations",
     "summary",
     "profile",
     "personal information",
@@ -85,7 +86,7 @@ def _alternation(headings: tuple[str, ...]) -> str:
 
 
 _ANY: Final = _alternation(REFERENCE_HEADINGS + FAMILY_HEADINGS + OTHER_HEADINGS)
-_BILINGUAL_TAIL: Final = rf"(?:\s*[/|]\s*(?:{_ANY}))*"
+_BILINGUAL_TAIL: Final = rf"(?:\s*(?:[/|&]|\band\b)\s*(?:{_ANY}))*"
 
 
 def _heading_re(headings: tuple[str, ...]) -> re.Pattern[str]:

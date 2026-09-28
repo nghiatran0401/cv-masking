@@ -17,15 +17,14 @@ from cv_masking.adapters.detection.names import (
 )
 from cv_masking.adapters.detection.normalize import fold_with_map, original_span
 from cv_masking.adapters.detection.sections import PartView, SectionKind, build_view
-from cv_masking.domain.policy import EntityType
+from cv_masking.domain.policy import REPLACEMENT_LABELS, EntityType
 from cv_masking.ports.detection import DetectionResult, TextMatch
 from cv_masking.ports.extraction import ExtractedDocument, TextPart
 
-DETECTOR_VERSION: Final = "1.1.0"
+DETECTOR_VERSION: Final = "1.2.3"
 _CONTEXT_WINDOW: Final = 48
 _HIGH: Final = 0.92
 _CONTEXT: Final = 0.88
-_REVIEW: Final = 0.70
 
 _EMAIL_RE: Final = r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,}"
 """Leftmost matches always start where a local-part run starts, so the lookbehind
@@ -54,11 +53,6 @@ _SALARY_RE: Final = (
     r"|\d{1,3}(?:,\d{3})+\s*usd"
     r"|thoa\s*thuan|thỏa\s*thuận|negotiable)"
 )
-_URL_RE: Final = (
-    r"(?:https?://[^\s]+|(?:www\.)?(?:linkedin|github|facebook)\.com/[^\s]+"
-    r"|(?:zalo|skype|telegram)\s*[:=]\s*\S+)"
-)
-
 _ID_LABELS: Final = (
     "cccd",
     "cmnd",
@@ -131,6 +125,28 @@ _FIELD_LABELS: Final = (
     (EntityType.SALARY, _SALARY_LABELS),
     (EntityType.PASSPORT, _PASSPORT_LABELS),
     (EntityType.NATIONAL_ID, _ID_LABELS),
+)
+_REPLACEMENTS: Final = tuple(sorted(set(REPLACEMENT_LABELS.values()), key=len, reverse=True))
+_VALUE_STOP_LABELS: Final = tuple(
+    dict.fromkeys(
+        (
+            *(label for _, labels in _FIELD_LABELS for label in labels),
+            *_CONTACT_LABELS,
+            "linkedin",
+            "github",
+            "facebook",
+            "website",
+            "portfolio",
+            "kinh nghiem",
+            "experience",
+            "education",
+            "hoc van",
+            "ky nang",
+            "skills",
+            "objective",
+            "muc tieu",
+        )
+    )
 )
 
 
@@ -235,10 +251,9 @@ def _field_hits(part: TextPart, patterns: tuple[PatternRecognizer, ...]) -> list
     folded, mapping, orig_to_fold = fold_with_map(text)
     hits = _pattern_hits(text, patterns)
     hits.extend(_context_digits(text, folded, mapping, orig_to_fold))
-    hits.extend(_labeled_fields(text, folded, mapping, orig_to_fold))
+    hits.extend(_labeled_fields(text, folded, mapping))
     hits.extend(_age_hits(text))
     hits.extend(_salary_hits(text, folded, mapping, orig_to_fold))
-    hits.extend(_url_hits(text, folded, mapping, orig_to_fold))
     return hits
 
 
@@ -271,19 +286,16 @@ def _context_digits(
     return hits
 
 
-def _labeled_fields(
-    text: str, folded: str, mapping: list[int], orig_to_fold: list[int | None]
-) -> list[Hit]:
+def _labeled_fields(text: str, folded: str, mapping: list[int]) -> list[Hit]:
     hits: list[Hit] = []
-    all_labels = tuple(label for _, labels in _FIELD_LABELS for label in labels)
     for entity, labels in _FIELD_LABELS:
         for label in labels:
-            for match in re.finditer(rf"(?<!\w){re.escape(label)}\s*[:\-]?", folded):
+            for match in re.finditer(_label_re(label), folded):
                 start, label_end = original_span(mapping, match.start(), match.end())
                 if label_end <= start:
                     continue
                 value_start = _skip_sep(text, label_end)
-                value_end = _value_end(text, value_start, folded, orig_to_fold, all_labels)
+                value_end = _value_end(text, value_start)
                 if value_end <= value_start:
                     continue
                 if entity is EntityType.DATE_OF_BIRTH:
@@ -302,29 +314,50 @@ def _labeled_fields(
 
 def _dob_from_value(text: str, start: int, end: int, folded: str, mapping: list[int]) -> list[Hit]:
     slice_text = text[start:end]
-    folded_slice = folded[_fold_index(mapping, start) : _fold_index(mapping, end)]
-    found: list[Hit] = []
-    for pattern in (_DATE_RE, r"(?<!\d)(\d{1,2})\s*tuoi", _YEAR_RE):
-        for match in re.finditer(pattern, folded_slice, flags=re.IGNORECASE):
-            orig_start, orig_end = original_span(
-                mapping,
-                _fold_index(mapping, start) + match.start(),
-                _fold_index(mapping, start) + match.end(),
-            )
-            if orig_end > orig_start:
-                found.append(
-                    Hit(EntityType.DATE_OF_BIRTH, orig_start, orig_end, 0.90, "date_of_birth")
-                )
-    if found:
-        return found
+    fold_start = _fold_index(mapping, start)
+    folded_slice = folded[fold_start : _fold_index(mapping, end)]
+    dates = _dob_pattern_hits(folded_slice, fold_start, mapping, _DATE_RE)
+    if dates:
+        return dates
+    ages = _dob_pattern_hits(folded_slice, fold_start, mapping, r"(?<!\d)(\d{1,2})\s*tuoi")
+    if ages:
+        return ages
+    if any(label in slice_text for label in _REPLACEMENTS):
+        return []
+    year = re.search(_YEAR_RE, folded_slice)
+    if year is not None and folded_slice[: year.start()].strip() == "":
+        orig_start, orig_end = original_span(
+            mapping, fold_start + year.start(), fold_start + year.end()
+        )
+        if orig_end > orig_start:
+            return [Hit(EntityType.DATE_OF_BIRTH, orig_start, orig_end, 0.90, "date_of_birth")]
+        return []
     if slice_text.strip():
         return [Hit(EntityType.DATE_OF_BIRTH, start, end, 0.90, "date_of_birth")]
     return []
 
 
+def _dob_pattern_hits(
+    folded_slice: str, fold_start: int, mapping: list[int], pattern: str
+) -> list[Hit]:
+    found: list[Hit] = []
+    for match in re.finditer(pattern, folded_slice, flags=re.IGNORECASE):
+        orig_start, orig_end = original_span(
+            mapping, fold_start + match.start(), fold_start + match.end()
+        )
+        if orig_end > orig_start:
+            found.append(Hit(EntityType.DATE_OF_BIRTH, orig_start, orig_end, 0.90, "date_of_birth"))
+    return found
+
+
+def _label_re(label: str) -> str:
+    """A field label as a whole word, never a prefix of ``agent`` / ``[DOB]``."""
+    return rf"(?<![\w\[]){re.escape(label)}(?!\w)\s*[:\-]?"
+
+
 def _age_hits(text: str) -> list[Hit]:
     hits: list[Hit] = []
-    for match in re.finditer(r"(?i)(?:tu[oôố]i|age)\s*[:\-]?\s*(\d{1,2})\b", text):
+    for match in re.finditer(r"(?i)(?:tu[oôố]i|\bage)\b\s*[:\-]?\s*(\d{1,2})\b", text):
         hits.append(
             Hit(EntityType.DATE_OF_BIRTH, match.start(1), match.end(1), 0.90, "date_of_birth")
         )
@@ -367,30 +400,6 @@ def _salary_in(
     return hits
 
 
-def _url_hits(
-    text: str, folded: str, mapping: list[int], orig_to_fold: list[int | None]
-) -> list[Hit]:
-    hits: list[Hit] = []
-    for match in re.finditer(_URL_RE, text, flags=re.IGNORECASE):
-        value = match.group(0)
-        known = any(site in value.casefold() for site in ("linkedin.", "github.", "facebook."))
-        handle = bool(re.match(r"(?i)(?:zalo|skype|telegram)\s*[:=]", value))
-        if known:
-            score = _HIGH
-        elif handle and _has_label_before(
-            folded, mapping, orig_to_fold, match.start(), _CONTACT_LABELS
-        ):
-            score = 0.85
-        elif value.lower().startswith("http") and _has_label_before(
-            folded, mapping, orig_to_fold, match.start(), _CONTACT_LABELS
-        ):
-            score = _REVIEW
-        else:
-            continue
-        hits.append(Hit(EntityType.PERSONAL_URL, match.start(), match.end(), score, "personal_url"))
-    return hits
-
-
 def _has_label_before(
     folded: str,
     mapping: list[int],
@@ -411,21 +420,26 @@ def _skip_sep(text: str, index: int) -> int:
     return index
 
 
-def _value_end(
-    text: str,
-    start: int,
-    folded: str,
-    orig_to_fold: list[int | None],
-    labels: tuple[str, ...],
-) -> int:
+def _value_end(text: str, start: int) -> int:
     newline = text.find("\n", start)
     end = len(text) if newline < 0 else newline
     raw = text[start:end]
     if not raw.strip():
         return start
+    for label in _REPLACEMENTS:
+        if raw.startswith(label):
+            return start + len(label)
+        idx = raw.find(label)
+        if idx > 0:
+            end = min(end, start + idx)
+            raw = text[start:end]
+    pipe = raw.find("|")
+    if pipe >= 0:
+        end = start + pipe
+        raw = text[start:end]
     folded_val, val_map, _ = fold_with_map(raw)
     cut: int | None = None
-    for label in labels:
+    for label in _VALUE_STOP_LABELS:
         found = re.search(rf"(?:^|\s)({re.escape(label)})\s*[:\-]", folded_val)
         if found is not None and found.start() > 0:
             at = val_map[found.start()]

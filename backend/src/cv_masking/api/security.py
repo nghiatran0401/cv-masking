@@ -32,7 +32,8 @@ _SECURITY_HEADERS: Final = (
     (
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; "
+        "img-src 'self'; font-src 'self'; connect-src 'self'; "
+        "frame-src 'self' blob:; object-src 'none'; "
         "base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     ),
     ("X-Content-Type-Options", "nosniff"),

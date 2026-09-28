@@ -108,6 +108,14 @@ RETRYABLE_ERROR_CODES: Final = frozenset(
         ErrorCode.INTERNAL_ERROR,
     }
 )
+# FAILED jobs whose masked output may be opened for inspection, never shared (D-46).
+INSPECTABLE_FAILURE_CODES: Final = frozenset(
+    {
+        ErrorCode.VERIFY_RESIDUAL_FINDING,
+        ErrorCode.VERIFY_RESIDUAL_DETECTION,
+        ErrorCode.VERIFY_RESIDUAL_METADATA,
+    }
+)
 
 
 class ReviewReason(StrEnum):

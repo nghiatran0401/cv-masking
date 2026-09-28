@@ -27,7 +27,12 @@ def test_index_and_assets_are_public(tmp_path: Path) -> None:
     page = client.get("/")
     assert page.status_code == 200
     assert "synthetic-ui" in page.text
-    assert page.headers["Content-Security-Policy"].startswith("default-src 'self'")
+    csp = page.headers["Content-Security-Policy"]
+    assert csp.startswith("default-src 'self'")
+    assert "frame-src 'self' blob:" in csp
+    assert "object-src 'none'" in csp
+    assert "*" not in csp
+    assert "https:" not in csp
     script = client.get("/assets/app.js")
     assert script.status_code == 200
     assert "synthetic-ui" in script.text

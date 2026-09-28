@@ -26,7 +26,7 @@ code from [error-codes.md](error-codes.md).
 | `UPLOAD_FILE_TOO_LARGE` | Over 20 MB | Reduce size; do not zip-inside-zip. |
 | `UPLOAD_BATCH_FILE_LIMIT` | 50 files | Start another batch (D-30). |
 | `UPLOAD_DUPLICATE` | Same hash in this batch | Skip; already queued. |
-| `UPLOAD_BATCH_CLOSED` | Batch already started | New batch. |
+| `UPLOAD_BATCH_CLOSED` | Extra new file after start | Use **Thử lại** on the failed row, or a new batch for extra files. |
 
 ## Validation (delete-only reviews)
 
@@ -44,12 +44,14 @@ fails the same way (`T` codes).
 | `DETECT_NO_CANDIDATE_NAME` | Name may be unmasked | Read the masked file; keep or delete. |
 | `DETECT_LOW_CONFIDENCE` / `MAP_AMBIGUOUS` | Uncertain finding | Same: inspect masked output. |
 | `MAP_FAILED` / `DETECT_FAILED` | Deterministic failure | Do not retry the same file; redact by hand. |
-| `VERIFY_RESIDUAL_*` | Leak or leftover metadata | Treat as failed redaction; do not share. |
+| `REDACT_SANITIZE_FAILED` | Hidden layers or metadata could not be proved gone | Designer PDFs (Canva/Figma) should now process, including odd layer rules (those layers are removed). If this still appears: Preview → File → Print → PDF → Save as PDF, then upload that copy. Do not share the failed file. |
+| `VERIFY_RESIDUAL_*` | Leak after masking | **View** the file. The row lists leftover types and pages, not the values. Do not share. Redact by hand or flatten (Print → PDF) and retry. |
 | `JOB_TIMEOUT` | Over 120 s | File too heavy or pathological; split or skip. |
-| `JOB_INTERRUPTED` | App stopped mid-document | Re-upload. |
+| `JOB_INTERRUPTED` | App stopped mid-document | **Thử lại** in this tab. |
 | `STORAGE_WRITE_FAILED` | Disk/permissions | Free space; check `data/` is owner-only. |
 
-Downloads are `redacted-<uuid>.…`. If Word or Preview still shows a
+Downloads are saved as `masked_<original filename>`. Stored files on disk
+are still `redacted-<uuid>.…`. If Word or Preview still shows a
 contact value in **body text**, do not share the file. If it appears only
 inside a **photo**, that is the accepted D-13 limitation.
 

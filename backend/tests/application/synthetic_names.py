@@ -13,6 +13,8 @@ from cv_masking.ports.extraction import ExtractedDocument, TextPart, TextSpan
 VN_NAME = "Nguyễn Văn Mẫu"
 VN_NAME_FOLDED = "Nguyen Van Mau"
 VN_NAME_UPPER = "NGUYỄN VĂN MẪU"
+VN_NAME_FOUR_UPPER = "NGUYEN VAN MAU ANH"
+VN_NAME_INITIAL = "NGUYEN VAN A"
 VN_NAME_SHORT = "Mẫu Nguyễn"
 VN_REFEREE = "Trần Thị Thử"
 EN_NAME = "Jane Example"

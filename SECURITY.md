@@ -9,8 +9,9 @@ with [AGENTS.md](AGENTS.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 - The server binds to `127.0.0.1` only. `0.0.0.0`, `::`, LAN IPs, and hostnames are refused at startup.
 - No outbound network calls of any kind: no AWS or cloud storage, no telemetry, analytics,
   crash reporting, update checks, remote fonts/CDNs, or external AI/LLM/API calls.
-- Inputs are never overwritten. Outputs are always new files named `redacted-<uuid>.pdf`
-  or `redacted-<uuid>.docx`, matching the input format.
+- Inputs are never overwritten. Stored outputs are always new files named `redacted-<uuid>.pdf`
+  or `redacted-<uuid>.docx`, matching the input format. The UI saves downloads as
+  `masked_<original filename>` from browser memory only.
 - PDF redaction uses PDF redaction annotations that are applied. Drawing boxes over text is not redaction.
 - DOCX redaction removes the text from the XML. Highlighting, shading, font color, or hidden
   text is not redaction.

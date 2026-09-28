@@ -81,6 +81,8 @@ def test_deleting_a_batch_removes_every_row_about_it(
         "document_finding_counts",
         "document_review_reasons",
         "document_verification_failures",
+        "document_residual_counts",
+        "document_residual_pages",
     ):
         assert raw.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0  # noqa: S608
 
@@ -106,7 +108,7 @@ def test_object_uses_say_which_files_are_still_needed(store: SqliteMetadataStore
         inputs = {use.ref: use.needed for use in reader.input_uses()}
         outputs = {use.ref: use.needed for use in reader.output_uses()}
     assert inputs == {queued.input_ref: True, done.input_ref: False, failed.input_ref: False}
-    assert outputs == {done.output_ref: True, failed.output_ref: False}
+    assert outputs == {done.output_ref: True, failed.output_ref: True}
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { consumeBootstrapQuery } from "../src/api";
+import { consumeBootstrapQuery, isPdfBlob } from "../src/api";
 
 describe("consumeBootstrapQuery", () => {
   it("strips the bootstrap query and returns the token", () => {
@@ -14,5 +14,17 @@ describe("consumeBootstrapQuery", () => {
     const replace = vi.fn();
     expect(consumeBootstrapQuery("", replace)).toBeUndefined();
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("isPdfBlob", () => {
+  it("accepts application/pdf and rejects other types", () => {
+    expect(
+      isPdfBlob(new Blob(["%PDF-synthetic"], { type: "application/pdf" })),
+    ).toBe(true);
+    expect(
+      isPdfBlob(new Blob(["<p>synthetic</p>"], { type: "text/html" })),
+    ).toBe(false);
+    expect(isPdfBlob(new Blob(["synthetic"], { type: "" }))).toBe(false);
   });
 });

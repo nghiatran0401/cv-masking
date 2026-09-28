@@ -1,6 +1,7 @@
 """Database inspection: the schema can only hold IDs, hashes, codes, counts, and times."""
 
 import sqlite3
+from dataclasses import replace
 
 import pytest
 from domain_builders import T0, findings_review, new_batch_id, rebuild, verification_for, verifying
@@ -9,7 +10,8 @@ from cv_masking.adapters.sqlite import SqliteMetadataStore
 from cv_masking.domain.batch import Batch
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
-from cv_masking.domain.verification import VerificationOutcome
+from cv_masking.domain.policy import EntityType
+from cv_masking.domain.verification import ResidualCounts, VerificationOutcome
 
 EXPECTED_COLUMNS = {
     "schema_migrations": {"version", "checksum"},
@@ -50,6 +52,8 @@ EXPECTED_COLUMNS = {
     "document_review_reasons": {"document_id", "reason"},
     "document_verification_failures": {"document_id", "code"},
     "document_hidden_content": {"document_id", "category", "count"},
+    "document_residual_counts": {"document_id", "entity_type", "count"},
+    "document_residual_pages": {"document_id", "entity_type", "page"},
 }
 FREE_TEXT = "Synthetic Candidate Nguyễn Văn Mẫu, 12 Phố Giả, synthetic@example.invalid"
 
@@ -75,8 +79,11 @@ def _populate(store: SqliteMetadataStore) -> None:
     job = verifying()
     failed = rebuild(
         job.record_verification(
-            verification_for(
-                job, VerificationOutcome.FAILED, frozenset({ErrorCode.VERIFY_RESIDUAL_FINDING})
+            replace(
+                verification_for(
+                    job, VerificationOutcome.FAILED, frozenset({ErrorCode.VERIFY_RESIDUAL_FINDING})
+                ),
+                residual=ResidualCounts.from_hits({EntityType.EMAIL: (1, (1,))}),
             ),
             job.updated_at,
         ),

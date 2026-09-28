@@ -62,7 +62,6 @@ ANNOTATIONS: Final = (
     (EntityType.POSTAL_ADDRESS, ADDRESS),
     (EntityType.DATE_OF_BIRTH, DOB),
     (EntityType.SALARY, SALARY),
-    (EntityType.PERSONAL_URL, URL),
     (EntityType.FAMILY_DETAILS, FAMILY),
     (EntityType.REFERENCE_NAME, REFEREE),
     (EntityType.EMAIL, REF_EMAIL),

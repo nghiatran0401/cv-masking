@@ -11,6 +11,7 @@ from cv_masking.domain.policy import (
     MANDATORY_ENTITY_TYPES,
     OPTIONAL_ENTITY_TYPES,
     REDACT_THRESHOLD,
+    UNHANDLED_ENTITY_TYPES,
     EntityType,
     MaskingPolicy,
     PolicyAction,
@@ -32,15 +33,15 @@ EXPECTED_MANDATORY = {
     "ethnicity",
     "health",
     "family_details",
-    "personal_url",
 }
 
 
 def test_entity_types_and_thresholds_match_the_masking_policy_doc() -> None:
     assert {e.value for e in MANDATORY_ENTITY_TYPES} == EXPECTED_MANDATORY
     assert {EntityType.SALARY} == OPTIONAL_ENTITY_TYPES
+    assert {EntityType.PERSONAL_URL} == UNHANDLED_ENTITY_TYPES
     assert (REDACT_THRESHOLD, DISCARD_THRESHOLD) == (0.85, 0.50)
-    assert MaskingPolicy().redacted_types == set(EntityType)
+    assert MaskingPolicy().redacted_types == set(EntityType) - UNHANDLED_ENTITY_TYPES
     assert MaskingPolicy(mask_salary=False).redacted_types == MANDATORY_ENTITY_TYPES
 
 
@@ -63,6 +64,10 @@ def test_threshold_boundaries() -> None:
     assert policy.action_for(EntityType.EMAIL, 0.85) is PolicyAction.REDACT
     unmasked = MaskingPolicy(mask_salary=False)
     assert unmasked.action_for(EntityType.SALARY, 0.99) is PolicyAction.DETECTED_NOT_REDACTED
+    assert (
+        MaskingPolicy().action_for(EntityType.PERSONAL_URL, 0.99)
+        is PolicyAction.DETECTED_NOT_REDACTED
+    )
 
 
 def test_invalid_confidence_is_rejected() -> None:
@@ -82,3 +87,9 @@ def test_mandatory_types_above_discard_are_always_redacted(
 ) -> None:
     action = MaskingPolicy(mask_salary=mask_salary).action_for(entity, confidence)
     assert action in {PolicyAction.REDACT, PolicyAction.REDACT_AND_REVIEW}
+
+
+def test_jobs_stored_under_policy_version_1_still_load() -> None:
+    loaded = MaskingPolicy(version="1")
+    assert loaded.redacted_types == MaskingPolicy().redacted_types
+    assert EntityType.PERSONAL_URL not in loaded.redacted_types

@@ -18,7 +18,7 @@ from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
 from cv_masking.domain.ids import ObjectRef, Sha256Digest
 from cv_masking.domain.policy import EntityType, MaskingPolicy
-from cv_masking.domain.verification import VerificationOutcome, VerificationResult
+from cv_masking.domain.verification import ResidualCounts, VerificationOutcome, VerificationResult
 from cv_masking.ports.processing import ProcessingReport, ValidationReport, VerificationReport
 from cv_masking.ports.storage import StoredObject
 
@@ -190,6 +190,9 @@ def verification_to_json(report: VerificationReport) -> Json:
             "verifier_id": result.verifier_id,
             "verifier_version": result.verifier_version,
             "verified_at": result.verified_at.isoformat(),
+            "residual": [
+                [entity.value, count, list(pages)] for entity, count, pages in result.residual.items
+            ],
         },
     }
 
@@ -201,6 +204,25 @@ def verification_from_json(message: Json) -> VerificationReport:
         if raw is not None:
             if not isinstance(raw, dict):
                 raise CodecError
+            residual_raw = raw.get("residual", [])
+            if not isinstance(residual_raw, list):
+                raise CodecError
+            hits: dict[EntityType, tuple[int, list[int]]] = {}
+            for item in residual_raw:
+                if (
+                    not isinstance(item, list)
+                    or len(item) != 3
+                    or not isinstance(item[0], str)
+                    or not isinstance(item[1], int)
+                    or isinstance(item[1], bool)
+                    or not isinstance(item[2], list)
+                    or not all(
+                        isinstance(page, int) and not isinstance(page, bool) for page in item[2]
+                    )
+                ):
+                    raise CodecError
+                entity = EntityType(item[0])
+                hits[entity] = (item[1], [int(page) for page in item[2]])
             result = VerificationResult(
                 outcome=VerificationOutcome(_field(raw, "outcome", str)),
                 failure_codes=frozenset(ErrorCode(_str(c)) for c in _field(raw, "codes", list)),
@@ -208,6 +230,7 @@ def verification_from_json(message: Json) -> VerificationReport:
                 verifier_id=_field(raw, "verifier_id", str),
                 verifier_version=_field(raw, "verifier_version", str),
                 verified_at=datetime.fromisoformat(_field(raw, "verified_at", str)),
+                residual=ResidualCounts.from_hits(hits),
             )
         return VerificationReport(result=result, failure=_optional_code(message))
     except (DomainError, ValueError) as error:

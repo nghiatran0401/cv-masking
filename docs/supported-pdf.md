@@ -81,8 +81,10 @@ contains the hidden text, annotation contents, attachment names, or script sourc
 
 All hidden content is **always removed** from the output (D-32); HR is not asked. The
 document goes through normal detection/redaction, the verifier checks that no category
-remains, and the per-document status and report show what was removed. If removal
-cannot be done safely the document fails with `REDACT_SANITIZE_FAILED`. The kinds and
+remains, and the per-document status and report show what was removed. Optional-content
+membership that cannot be parsed is removed with the hidden layers (D-47). If removal
+still cannot be proved (malformed streams, a render that adds extractable text, leftover
+catalogue) the document fails with `REDACT_SANITIZE_FAILED`. The kinds and
 counts removed are stored on the document (Stage 12).
 
 Always-stripped components (metadata, links, outlines, thumbnails, tagged structure) are removed
@@ -130,7 +132,7 @@ and the displayed result of fields.
 |---|---|
 | Core, app, and custom document properties (`docProps/*`: creator, last modified by, title, company, manager, custom fields) | Often contain the candidate's name. |
 | Thumbnail (`docProps/thumbnail.*`) | It is a picture of page 1. |
-| Hyperlink targets (relationship `Target` of hyperlinks, including `mailto:`) and tooltips | Hold emails and profile URLs. Every external relationship is removed and the link's `r:id` dropped; the visible text stays and is redacted separately. |
+| Hyperlink targets (relationship `Target` of hyperlinks, including `mailto:`) and tooltips | Hold emails and can fetch a remote URL when opened. Every external relationship is removed and the link's `r:id` dropped; the visible text stays. Profile URLs in that text are not masked (D-43). |
 | Field codes (`w:instrText`; `w:fldSimple` is unwrapped to its result) | Can hold hidden values; the displayed result text is kept and scanned. |
 | Image alt text and titles (`wp:docPr` `descr`/`title`) | Can hold names. Images themselves are kept (D-13). |
 | Tracked-change and comment author lists (`people.xml`, author attributes) | Names. |

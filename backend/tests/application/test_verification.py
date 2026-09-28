@@ -2,13 +2,32 @@
 
 import hashlib
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from domain_builders import COUNTS, later, processing
 from service_helpers import ManualClock
-from synthetic_redaction import EMAIL, HIDDEN_BUILDERS, NAME, PHONE, SALARY, cv_pdf, with_hidden
+from synthetic_redaction import (
+    ALL_CAPS_NAME,
+    EMAIL,
+    GITHUB,
+    HIDDEN_BUILDERS,
+    JOB_TITLE,
+    LINKEDIN,
+    NAME,
+    PHONE,
+    SALARY,
+    WESTERN_NAME,
+    all_caps_title_cv,
+    contact_header_cv,
+    cv_pdf,
+    education_project_cv,
+    profile_slug_cv,
+    unlabeled_header_cv,
+    with_hidden,
+)
 from synthetic_verification import (
     METADATA_TAMPERS,
     STRAY_WORD,
@@ -24,7 +43,7 @@ from cv_masking.adapters.detection import PatternDetector, PresidioDetector
 from cv_masking.adapters.local_storage import LocalInputStore, LocalOutputStore, StorageRoot
 from cv_masking.adapters.pdf import PyMuPDFExtractor, PyMuPDFRedactor, PyMuPDFVerifier
 from cv_masking.application import DetectionOutcome, DetectionService, VerificationService
-from cv_masking.application.verification import VERIFIER_ID, fold, value_pattern
+from cv_masking.application.verification import VERIFIER_ID, fold, value_pattern, without_kept_urls
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.document_job import DocumentState
 from cv_masking.domain.errors import InvariantError
@@ -143,6 +162,123 @@ def test_a_redacted_output_passes_and_neither_file_changes(
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths] == before
 
 
+def test_a_contact_header_resume_verifies_without_residual_detection(
+    input_store: LocalInputStore, output_store: LocalOutputStore
+) -> None:
+    data = contact_header_cv()
+    chosen = MaskingPolicy()
+    document, detection = _detect(data, chosen)
+    counts = Counter(match.entity_type for match in detection.matches)
+    assert counts[EntityType.EMAIL] == 1
+    assert counts[EntityType.PHONE] == 1
+    assert counts[EntityType.DATE_OF_BIRTH] == 1
+    assert counts[EntityType.PERSONAL_URL] == 0
+    redacted = PyMuPDFRedactor().redact(data, detection.regions)
+    assert redacted.output is not None
+    source = input_store.save_stream(DocumentFormat.PDF, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    stored = _store_output(output_store, redacted.output)
+    run = _Run(source, stored, document, detection, chosen, redacted.output)
+    result = _verify(input_store, output_store, run)
+    assert result.outcome is not VerificationOutcome.FAILED
+    assert "VERIFY_RESIDUAL_DETECTION" not in _codes(result)
+    inspected = PyMuPDFVerifier().inspect(redacted.output, data)
+    assert inspected.document is not None
+    kept = inspected.document.parts[0].text
+    assert "2019" in kept
+    assert "2023" in kept
+    assert LINKEDIN in kept
+    assert GITHUB in kept
+
+
+def test_a_profile_url_that_repeats_the_name_is_not_a_residual(
+    input_store: LocalInputStore, output_store: LocalOutputStore
+) -> None:
+    data = profile_slug_cv()
+    chosen = MaskingPolicy()
+    document, detection = _detect(data, chosen)
+    assert any(match.entity_type is EntityType.CANDIDATE_NAME for match in detection.matches)
+    redacted = PyMuPDFRedactor().redact(data, detection.regions)
+    assert redacted.output is not None
+    source = input_store.save_stream(DocumentFormat.PDF, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    stored = _store_output(output_store, redacted.output)
+    run = _Run(source, stored, document, detection, chosen, redacted.output)
+    result = _verify(input_store, output_store, run)
+    assert result.outcome is VerificationOutcome.PASSED
+    inspected = PyMuPDFVerifier().inspect(redacted.output, data)
+    assert inspected.document is not None
+    kept = inspected.document.parts[0].text
+    assert NAME not in kept
+    assert "linkedin.com/in/nguyen-van-mau-example" in fold(kept)
+    assert "github.com/nguyenvanmau-example" in fold(kept)
+
+
+def test_a_multi_agent_education_bullet_is_not_redacted_as_dob(
+    input_store: LocalInputStore, output_store: LocalOutputStore
+) -> None:
+    data = education_project_cv()
+    chosen = MaskingPolicy()
+    document, detection = _detect(data, chosen)
+    assert all(match.entity_type is not EntityType.DATE_OF_BIRTH for match in detection.matches)
+    redacted = PyMuPDFRedactor().redact(data, detection.regions)
+    assert redacted.output is not None
+    source = input_store.save_stream(DocumentFormat.PDF, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    stored = _store_output(output_store, redacted.output)
+    run = _Run(source, stored, document, detection, chosen, redacted.output)
+    result = _verify(input_store, output_store, run)
+    assert result.outcome is not VerificationOutcome.FAILED
+    inspected = PyMuPDFVerifier().inspect(redacted.output, data)
+    assert inspected.document is not None
+    kept = inspected.document.parts[0].text.casefold()
+    assert "multi-agent" in kept
+    assert "cybersecurity" in kept
+
+
+def test_an_unlabeled_header_name_is_redacted(
+    input_store: LocalInputStore, output_store: LocalOutputStore
+) -> None:
+    data = unlabeled_header_cv()
+    chosen = MaskingPolicy()
+    document, detection = _detect(data, chosen)
+    names = [match for match in detection.matches if match.entity_type is EntityType.CANDIDATE_NAME]
+    assert names
+    redacted = PyMuPDFRedactor().redact(data, detection.regions)
+    assert redacted.output is not None
+    source = input_store.save_stream(DocumentFormat.PDF, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    stored = _store_output(output_store, redacted.output)
+    run = _Run(source, stored, document, detection, chosen, redacted.output)
+    result = _verify(input_store, output_store, run)
+    assert result.outcome is not VerificationOutcome.FAILED
+    inspected = PyMuPDFVerifier().inspect(redacted.output, data)
+    assert inspected.document is not None
+    kept = inspected.document.parts[0].text
+    assert WESTERN_NAME not in kept
+    assert "Mau" not in kept
+    assert "Nguyen" not in kept
+
+
+def test_an_all_caps_title_name_is_redacted(
+    input_store: LocalInputStore, output_store: LocalOutputStore
+) -> None:
+    data = all_caps_title_cv()
+    chosen = MaskingPolicy()
+    document, detection = _detect(data, chosen)
+    names = [match for match in detection.matches if match.entity_type is EntityType.CANDIDATE_NAME]
+    assert names
+    redacted = PyMuPDFRedactor().redact(data, detection.regions)
+    assert redacted.output is not None
+    source = input_store.save_stream(DocumentFormat.PDF, [data], max_bytes=HARD_MAX_FILE_BYTES)
+    stored = _store_output(output_store, redacted.output)
+    run = _Run(source, stored, document, detection, chosen, redacted.output)
+    result = _verify(input_store, output_store, run)
+    assert result.outcome is not VerificationOutcome.FAILED
+    inspected = PyMuPDFVerifier().inspect(redacted.output, data)
+    assert inspected.document is not None
+    kept = inspected.document.parts[0].text
+    assert ALL_CAPS_NAME not in kept
+    assert "NGUYEN" not in kept
+    assert JOB_TITLE in kept
+
+
 @pytest.mark.parametrize("categories", [*((name,) for name in _CATEGORIES), _CATEGORIES])
 def test_outputs_with_hidden_content_removed_pass(
     input_store: LocalInputStore, output_store: LocalOutputStore, categories: tuple[str, ...]
@@ -173,6 +309,7 @@ def test_the_unredacted_input_as_output_fails_on_every_text_check(
     assert result.outcome is VerificationOutcome.FAILED
     assert {"VERIFY_RESIDUAL_FINDING", "VERIFY_RESIDUAL_DETECTION"} <= _codes(result)
     assert result.primary_failure_code is ErrorCode.VERIFY_RESIDUAL_FINDING
+    assert result.residual.items
 
 
 @pytest.mark.parametrize("tamper", list(VALUE_TAMPERS), ids=list(VALUE_TAMPERS))
@@ -374,6 +511,24 @@ def test_name_search_respects_word_boundaries() -> None:
     pattern = value_pattern(EntityType.CANDIDATE_NAME, NAME)
     assert pattern is not None
     assert pattern.search(fold("xnguyen van mau")) is None
+
+
+def test_a_name_only_inside_a_kept_url_is_not_searched() -> None:
+    pattern = value_pattern(EntityType.CANDIDATE_NAME, NAME)
+    assert pattern is not None
+    url = fold("LinkedIn: linkedin.com/in/nguyen-van-mau-example")
+    glued = fold("GitHub: github.com/nguyenvanmau-example")
+    assert pattern.search(url) is not None
+    assert pattern.search(glued) is not None
+    assert pattern.search(without_kept_urls(url)) is None
+    assert pattern.search(without_kept_urls(glued)) is None
+
+
+def test_a_hyphenated_name_outside_a_url_is_still_searched() -> None:
+    pattern = value_pattern(EntityType.CANDIDATE_NAME, NAME)
+    assert pattern is not None
+    leftover = fold("Signed: nguyễn-văn-mẫu")
+    assert pattern.search(without_kept_urls(leftover)) is not None
 
 
 # ------------------------------------------------------------------ failures and boundaries

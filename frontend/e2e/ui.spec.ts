@@ -9,6 +9,7 @@ test("the UI is local-only, bilingual, and salary is the only toggle", async ({
     const allowed =
       url.startsWith("http://127.0.0.1:") ||
       url.startsWith("ws://127.0.0.1:") ||
+      url.startsWith("blob:") ||
       url.startsWith("data:") ||
       url === "about:blank";
     if (!allowed) {

@@ -8,7 +8,7 @@ import logging
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from synthetic_detections import PHONE
+from synthetic_detections import CCCD, PHONE
 from synthetic_names import (
     EN_ADDRESS,
     EN_COMPANY,
@@ -24,6 +24,8 @@ from synthetic_names import (
     VN_EMAIL,
     VN_NAME,
     VN_NAME_FOLDED,
+    VN_NAME_FOUR_UPPER,
+    VN_NAME_INITIAL,
     VN_NAME_SHORT,
     VN_NAME_UPPER,
     VN_REFEREE,
@@ -166,6 +168,129 @@ def test_english_header_without_signals_requires_review(service: DetectionServic
     assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
 
 
+def test_unlabeled_name_before_contact_on_the_same_line(service: DetectionService) -> None:
+    text = f"{EN_NAME} 0900000000 • {EN_EMAIL} • linkedin.com/in/jane-example"
+    document = docx(text, "Skills", "Python")
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(document.parts[0].text, EN_NAME)}
+    assert _only(outcome, EntityType.CANDIDATE_NAME).detector_id == "name.header"
+
+
+def test_western_order_vietnamese_header_matches_email_local_part(
+    service: DetectionService,
+) -> None:
+    email = "thmau0401@example.test"
+    document = docx(VN_NAME_SHORT, f"{email} • github.com/mau-example", "Skills", "Python")
+    outcome = _run(service, document)
+    name = _only(outcome, EntityType.CANDIDATE_NAME)
+    assert (name.start, name.end) == span_of(document.parts[0].text, VN_NAME_SHORT)
+    assert "vn_surname" in name.signals
+    assert "email_match" in name.signals
+    assert name.confidence >= REDACT_THRESHOLD
+    assert outcome.review == frozenset()
+
+
+def test_skill_category_labels_are_not_names(service: DetectionService) -> None:
+    lines = (
+        "Programming Languages: Java, Python, SQL",
+        "Frameworks & Libraries: Spring Boot, React",
+        "English: Intermediate",
+        EN_NAME,
+        f"Email: {EN_EMAIL}",
+    )
+    document = docx(*lines)
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(text, EN_NAME)}
+    assert not _covered(outcome, *span_of(text, "Programming Languages"))
+    assert not _covered(outcome, *span_of(text, "Java"))
+    assert not _covered(outcome, *span_of(text, "Spring Boot"))
+
+
+def test_skills_section_keeps_category_labels(service: DetectionService) -> None:
+    lines = (
+        EN_NAME,
+        f"Email: {EN_EMAIL}",
+        "Skills",
+        "Programming Languages: Java, Python, SQL",
+        "Frameworks & Libraries: Spring Boot, React",
+        "English: Intermediate",
+    )
+    document = docx(*lines)
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(text, EN_NAME)}
+    assert not _covered(outcome, *span_of(text, "Programming Languages"))
+    assert not _covered(outcome, *span_of(text, "Frameworks"))
+    assert not _covered(outcome, *span_of(text, "English"))
+
+
+def test_all_caps_header_keeps_a_single_letter_given_name(
+    service: DetectionService,
+) -> None:
+    document = docx(VN_NAME_INITIAL, "Software Developer", f"Email: {VN_EMAIL}")
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(text, VN_NAME_INITIAL)}
+    assert not _covered(outcome, *span_of(text, "Software Developer"))
+
+
+def test_designed_contact_block_does_not_redact_the_objective(
+    service: DetectionService,
+) -> None:
+    address = "123 Example Street, District 1, Ho Chi Minh City, Vietnam"
+    objective = (
+        "Senior Full-Stack Developer with over 6 years of experience building scalable "
+        "web applications, microservices architectures, and high-throughput backend APIs."
+    )
+    document = docx(
+        VN_NAME_INITIAL,
+        "Senior Full-Stack Software Engineer",
+        "CONTACT & PERSONAL INFORMATION",
+        f"Phone: {PHONE}",
+        f"Email: {VN_EMAIL}",
+        f"CCCD (Vietnamese Citizen ID): {CCCD}",
+        f"Address: {address}",
+        "LinkedIn: linkedin.com/in/mau-example",
+        "GitHub: github.com/mau-example",
+        "OBJECTIVE & EXPECTATIONS",
+        objective,
+        "Expected Salary: $2,800 USD / month (or 20.000.000 VND / month)",
+    )
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(text, VN_NAME_INITIAL)}
+    assert _spans(outcome, EntityType.POSTAL_ADDRESS) == {span_of(text, address)}
+    assert _spans(outcome, EntityType.PHONE) == {span_of(text, PHONE)}
+    assert _spans(outcome, EntityType.EMAIL) == {span_of(text, VN_EMAIL)}
+    assert _spans(outcome, EntityType.NATIONAL_ID) == {span_of(text, CCCD)}
+    assert not _covered(outcome, *span_of(text, objective))
+    assert not _covered(outcome, *span_of(text, "linkedin.com/in/mau-example"))
+    assert not _covered(outcome, *span_of(text, "github.com/mau-example"))
+
+
+def test_all_caps_four_token_header_is_a_name(service: DetectionService) -> None:
+    document = docx(VN_NAME_FOUR_UPPER, "Software Developer", f"Email: {VN_EMAIL}")
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    name = _only(outcome, EntityType.CANDIDATE_NAME)
+    assert (name.start, name.end) == span_of(text, VN_NAME_FOUR_UPPER)
+    assert name.detector_id == "name.header"
+    assert not _covered(outcome, *span_of(text, "Software Developer"))
+
+
+def test_all_caps_header_joined_to_job_title_is_still_a_name(
+    service: DetectionService,
+) -> None:
+    line = f"{VN_NAME_FOUR_UPPER} Software Developer"
+    document = docx(line, f"Email: {VN_EMAIL}", "Ho Chi Minh City")
+    text = document.parts[0].text
+    outcome = _run(service, document)
+    assert _spans(outcome, EntityType.CANDIDATE_NAME) == {span_of(text, VN_NAME_FOUR_UPPER)}
+    assert not _covered(outcome, *span_of(text, "Software"))
+    assert not _covered(outcome, *span_of(text, "Developer"))
+
+
 def test_header_part_name_repeats_into_body(service: DetectionService) -> None:
     document = docx_parts(
         {
@@ -197,6 +322,7 @@ _CONFOUNDERS = (
     "Sơ Yếu Lý Lịch",
     "Kinh Nghiệm Làm Việc",
     "Personal Information",
+    "Programming Languages",
 )
 
 
@@ -409,7 +535,7 @@ def test_every_heuristic_result_has_provenance(service: DetectionService) -> Non
     assert len(heuristic) >= 4
     for match in heuristic:
         assert match.signals
-        assert match.detector_version == "1.1.0"
+        assert match.detector_version == "1.2.3"
     for finding in outcome.findings:
         assert finding.requires_review == (finding.confidence < REDACT_THRESHOLD)
 

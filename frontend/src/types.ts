@@ -33,6 +33,8 @@ export type DocumentView = {
   can_approve: boolean;
   has_output: boolean;
   finding_counts: Record<string, number> | null;
+  residual_counts: Record<string, number>;
+  residual_pages: Record<string, number[]>;
   hidden_removed: Record<string, number>;
   version: number;
 };

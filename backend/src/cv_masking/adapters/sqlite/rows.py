@@ -21,7 +21,7 @@ from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import EntityType, MaskingPolicy
-from cv_masking.domain.verification import VerificationOutcome, VerificationResult
+from cv_masking.domain.verification import ResidualCounts, VerificationOutcome, VerificationResult
 from cv_masking.ports.storage import StorageError
 
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -203,6 +203,25 @@ def hidden_content_params(job: DocumentJob) -> list[tuple[str, str, int]]:
     ]
 
 
+def residual_count_params(job: DocumentJob) -> list[tuple[str, str, int]]:
+    if job.verification is None:
+        return []
+    return [
+        (str(job.document_id), entity.value, count)
+        for entity, count, _pages in job.verification.residual.items
+    ]
+
+
+def residual_page_params(job: DocumentJob) -> list[tuple[str, str, int]]:
+    if job.verification is None:
+        return []
+    return [
+        (str(job.document_id), entity.value, page)
+        for entity, _count, pages in job.verification.residual.items
+        for page in pages
+    ]
+
+
 def review_reason_params(job: DocumentJob) -> list[tuple[str, str]]:
     return [(str(job.document_id), reason.value) for reason in sorted(job.review_reasons)]
 
@@ -243,10 +262,12 @@ def _hidden_removed(hidden: list[Row]) -> HiddenContentCounts:
     )
 
 
-def _verification(row: Row, failures: list[Row]) -> VerificationResult | None:
+def _verification(
+    row: Row, failures: list[Row], residual: list[Row], residual_pages: list[Row]
+) -> VerificationResult | None:
     fields = ("verification_outcome", "verifier_id", "verifier_version", "verified_at")
     if all(row[name] is None for name in fields):
-        if failures:
+        if failures or residual or residual_pages:
             raise ValueError("verification failures stored without a verification")
         return None
     output_ref = _optional_ref(row["output_ref"])
@@ -259,11 +280,35 @@ def _verification(row: Row, failures: list[Row]) -> VerificationResult | None:
         verifier_id=_text(row["verifier_id"]),
         verifier_version=_text(row["verifier_version"]),
         verified_at=_from_micros(row["verified_at"]),
+        residual=_residual_counts(residual, residual_pages),
     )
 
 
+def _residual_counts(counts: list[Row], pages: list[Row]) -> ResidualCounts:
+    by_type: dict[EntityType, tuple[int, list[int]]] = {}
+    for item in counts:
+        entity = EntityType(_text(item["entity_type"]))
+        if entity in by_type:
+            raise ValueError("duplicate residual count")
+        by_type[entity] = (_integer(item["count"]), [])
+    for item in pages:
+        entity = EntityType(_text(item["entity_type"]))
+        if entity not in by_type:
+            raise ValueError("residual page without a count")
+        count, collected = by_type[entity]
+        collected.append(_integer(item["page"]))
+        by_type[entity] = (count, collected)
+    return ResidualCounts.from_hits(by_type)
+
+
 def document_from_rows(
-    row: Row, counts: list[Row], reasons: list[Row], failures: list[Row], hidden: list[Row]
+    row: Row,
+    counts: list[Row],
+    reasons: list[Row],
+    failures: list[Row],
+    hidden: list[Row],
+    residual: list[Row],
+    residual_pages: list[Row],
 ) -> DocumentJob:
     with decoding():
         size = row["size_bytes"]
@@ -289,7 +334,7 @@ def document_from_rows(
             output_ref=_optional_ref(row["output_ref"]),
             finding_counts=_finding_counts(row, counts),
             review_reasons=frozenset(ReviewReason(_text(item["reason"])) for item in reasons),
-            verification=_verification(row, failures),
+            verification=_verification(row, failures, residual, residual_pages),
             error_code=None if error_code is None else ErrorCode(error_code),
         )
 

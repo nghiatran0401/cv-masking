@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, assert_never
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
@@ -19,6 +19,7 @@ from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId
 from cv_masking.domain.limits import READ_CHUNK_BYTES
+from cv_masking.domain.verification import NO_RESIDUAL, ResidualCounts
 
 router = APIRouter(prefix="/api/batches")
 
@@ -65,6 +66,8 @@ class DocumentView(BaseModel):
     can_approve: bool
     has_output: bool
     finding_counts: dict[str, int] | None
+    residual_counts: dict[str, int]
+    residual_pages: dict[str, tuple[int, ...]]
     hidden_removed: dict[str, int]
     version: int
 
@@ -115,13 +118,23 @@ def _document_view(job: DocumentJob) -> DocumentView:
         error_code=job.error_code.value if job.error_code is not None else None,
         review_reasons=tuple(sorted(reason.value for reason in job.review_reasons)),
         can_approve=job.can_approve_review,
-        has_output=job.output_ref is not None,
+        has_output=job.has_downloadable_output,
         finding_counts=None
         if job.finding_counts is None
         else {entity.value: count for entity, count in job.finding_counts.items},
+        residual_counts={entity.value: count for entity, count, _pages in _residual(job).items},
+        residual_pages={
+            entity.value: pages for entity, _count, pages in _residual(job).items if pages
+        },
         hidden_removed={category.value: count for category, count in job.hidden_removed.items},
         version=job.version,
     )
+
+
+def _residual(job: DocumentJob) -> ResidualCounts:
+    if job.verification is None:
+        return NO_RESIDUAL
+    return job.verification.residual
 
 
 @router.post("", status_code=201)
@@ -177,6 +190,7 @@ def upload_document(
     batch_id: UUID,
     runtime: Annotated[Runtime, Depends(_runtime)],
     file: Annotated[UploadFile | None, File()] = None,
+    replaces: Annotated[UUID | None, Query()] = None,
 ) -> DocumentView:
     if file is None:
         raise ApiError(ErrorCode.UPLOAD_MALFORMED_REQUEST, 400, batch_id=str(batch_id))
@@ -185,7 +199,10 @@ def upload_document(
         _iter_file(file),
         filename=file.filename,
         content_type=file.content_type,
+        replaces=None if replaces is None else _document_id(replaces),
     )
+    if runtime.worker is not None:
+        runtime.worker.notify()
     return _document_view(job)
 
 

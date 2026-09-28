@@ -85,6 +85,15 @@ class Batch:
         self._require_state("set_mask_salary", BatchState.OPEN)
         return self._advance(at, mask_salary=mask_salary)
 
+    def record_retry(self, at: datetime) -> "Batch":
+        """Keep count unchanged; a finished batch returns to RUNNING so the retry can run."""
+        if self.state is BatchState.PURGED:
+            raise InvalidTransitionError("record_retry", self.state)
+        if self.state is BatchState.FINISHED:
+            return self._advance(at, state=BatchState.RUNNING)
+        self._require_state("record_retry", BatchState.OPEN, BatchState.RUNNING)
+        return self._advance(at)
+
     def start(self, at: datetime) -> "Batch":
         self._require_state("start", BatchState.OPEN)
         if self.document_count < 1:

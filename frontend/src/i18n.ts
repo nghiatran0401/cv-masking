@@ -28,12 +28,20 @@ type MessageTree = {
   retry: string;
   remove: string;
   download: string;
+  view: string;
+  preview: string;
+  closePreview: string;
+  previewLoading: string;
+  previewFailed: string;
   keep: string;
   deny: string;
-  exportZip: string;
+  downloadAll: string;
   empty: string;
   busy: string;
-  retryClosed: string;
+  retryMissing: string;
+  residual: string;
+  residualPage: string;
+  unsafeOutput: string;
   sessionFailed: string;
   states: Record<string, string>;
   errors: Record<string, string>;
@@ -71,12 +79,21 @@ export const MESSAGES: Record<Language, MessageTree> = {
     retry: "Thử lại",
     remove: "Xóa",
     download: "Tải bản đã che",
+    view: "Xem bản đã che",
+    preview: "Bản đã che",
+    closePreview: "Đóng",
+    previewLoading: "Đang tải bản đã che…",
+    previewFailed: "Không xem được. Tải xuống rồi mở bằng Preview.",
     keep: "Giữ",
     deny: "Xóa bản đã che",
-    exportZip: "Tải ZIP các bản đã che và báo cáo",
+    downloadAll: "Tải tất cả CV đã che",
     empty: "Chưa có tệp.",
     busy: "Đang xử lý…",
-    retryClosed: "Lô đã khóa. Tạo lô mới để tải lại tệp.",
+    retryMissing:
+      "Tệp không còn trên màn hình này. Giữ tab này mở khi bấm Thử lại.",
+    residual: "Còn sót, không chia sẻ:",
+    residualPage: "trang",
+    unsafeOutput: "Bản này chưa an toàn để gửi. Chỉ xem để biết chỗ còn sót.",
     sessionFailed: "Không mở được phiên làm việc. Tải lại trang.",
     states: {
       created: "Đang nhận",
@@ -121,7 +138,7 @@ export const MESSAGES: Record<Language, MessageTree> = {
       VERIFY_RESIDUAL_METADATA: "Vẫn còn siêu dữ liệu hoặc nội dung ẩn.",
       JOB_TIMEOUT: "Xử lý quá thời gian.",
       JOB_CANCELLED: "Đã hủy.",
-      JOB_INTERRUPTED: "Ứng dụng dừng giữa chừng. Tải lại tệp để thử.",
+      JOB_INTERRUPTED: "Ứng dụng dừng giữa chừng. Bấm Thử lại.",
       STORAGE_WRITE_FAILED: "Không ghi được đĩa. Thử lại.",
       STORAGE_PATH_REJECTED: "Đường lưu trữ không hợp lệ.",
       STORAGE_INTEGRITY_FAILED: "Tệp lưu trữ bị đổi.",
@@ -208,13 +225,22 @@ export const MESSAGES: Record<Language, MessageTree> = {
     retry: "Retry",
     remove: "Remove",
     download: "Download masked file",
+    view: "View masked file",
+    preview: "Masked file",
+    closePreview: "Close",
+    previewLoading: "Loading masked file…",
+    previewFailed: "Could not preview. Download and open it in Preview.",
     keep: "Keep",
     deny: "Delete masked file",
-    exportZip: "Download masked ZIP and report",
+    downloadAll: "Download all masked CVs",
     empty: "No files yet.",
     busy: "Processing…",
-    retryClosed:
-      "This batch is closed. Start a new batch to upload the file again.",
+    retryMissing:
+      "The file is no longer in this tab. Keep this tab open when you click Retry.",
+    residual: "Still unmasked, do not share:",
+    residualPage: "page",
+    unsafeOutput:
+      "This file is not safe to send. View it only to see what remains.",
     sessionFailed: "Could not open a session. Reload the page.",
     states: {
       created: "Receiving",
@@ -264,7 +290,7 @@ export const MESSAGES: Record<Language, MessageTree> = {
       VERIFY_RESIDUAL_METADATA: "Metadata or hidden content remains.",
       JOB_TIMEOUT: "Processing exceeded the time limit.",
       JOB_CANCELLED: "Cancelled.",
-      JOB_INTERRUPTED: "The app stopped mid-document. Re-upload to try again.",
+      JOB_INTERRUPTED: "The app stopped mid-document. Click Retry.",
       STORAGE_WRITE_FAILED: "A local write failed. Try again.",
       STORAGE_PATH_REJECTED: "The storage path was refused.",
       STORAGE_INTEGRITY_FAILED: "A stored file no longer matches its hash.",

@@ -157,6 +157,31 @@ MIGRATIONS: Final = (
             """,
         ),
     ),
+    Migration(
+        3,
+        (
+            """
+            CREATE TABLE document_residual_counts (
+                document_id TEXT NOT NULL REFERENCES documents (document_id) ON DELETE CASCADE,
+                entity_type TEXT NOT NULL
+                    CHECK (length(entity_type) BETWEEN 1 AND 32
+                           AND entity_type NOT GLOB '*[^a-z_]*'),
+                count INTEGER NOT NULL CHECK (count >= 1),
+                PRIMARY KEY (document_id, entity_type)
+            ) STRICT, WITHOUT ROWID
+            """,
+            """
+            CREATE TABLE document_residual_pages (
+                document_id TEXT NOT NULL REFERENCES documents (document_id) ON DELETE CASCADE,
+                entity_type TEXT NOT NULL
+                    CHECK (length(entity_type) BETWEEN 1 AND 32
+                           AND entity_type NOT GLOB '*[^a-z_]*'),
+                page INTEGER NOT NULL CHECK (page BETWEEN 1 AND 30),
+                PRIMARY KEY (document_id, entity_type, page)
+            ) STRICT, WITHOUT ROWID
+            """,
+        ),
+    ),
 )
 LATEST_VERSION: Final = MIGRATIONS[-1].version
 

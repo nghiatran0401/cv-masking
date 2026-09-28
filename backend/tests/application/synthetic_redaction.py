@@ -5,6 +5,7 @@ PYTEST_DONT_REWRITE
 """
 
 import io
+import re
 from collections.abc import Callable
 
 import pymupdf
@@ -38,6 +39,125 @@ def _image(page: pymupdf.Page, rect: pymupdf.Rect, oc: int = 0) -> None:
 
 
 IMAGE_RECT = pymupdf.Rect(400, 600, 460, 660)
+
+
+LINKEDIN = "https://linkedin.com/in/mau-example"
+GITHUB = "https://github.com/mau-example"
+DOB = "01/01/1990"
+
+
+def contact_header_cv() -> bytes:
+    """One contact line with email, phone, DOB, and two URLs, then work years.
+
+    Designed CVs often put those fields on one extracted line; employment dates
+    must stay after the DOB is labelled.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_htmlbox(pymupdf.Rect(40, 30, 560, 70), f'<p style="font-size:22px">{NAME}</p>')
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 80, 560, 130),
+        f"<p>Email: {EMAIL} | Phone: {PHONE} | Date of birth: {DOB} | "
+        f"LinkedIn: {LINKEDIN} | GitHub: {GITHUB}</p>",
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 160, 560, 230),
+        f"<p>Experience</p><p>{COMPANY} 2019-2023 Python</p>",
+    )
+    return _bytes(document)
+
+
+def profile_slug_cv() -> bytes:
+    """Display name redacted; LinkedIn/GitHub path still contains the folded name.
+
+    D-43 keeps those URLs visible. Verification must not treat the slug as a leftover name.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_htmlbox(pymupdf.Rect(40, 30, 560, 70), f'<p style="font-size:22px">{NAME}</p>')
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 80, 560, 160),
+        "<p>Email: "
+        f"{EMAIL}</p><p>Phone: {PHONE}</p>"
+        "<p>LinkedIn: linkedin.com/in/nguyen-van-mau-example</p>"
+        "<p>GitHub: github.com/nguyenvanmau-example</p>",
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 180, 560, 250),
+        f"<p>Experience</p><p>{COMPANY} 2019-2023 Python</p>",
+    )
+    return _bytes(document)
+
+
+WESTERN_NAME = "Mau Nguyen"
+WESTERN_EMAIL = "thmau0401@example.test"
+
+
+def unlabeled_header_cv() -> bytes:
+    """Centered display name with no Name: label, then a bullet contact row.
+
+    Designed CVs put the name in a large font and the phone/email/URLs on the
+    next line; tight spacing often extracts as one line.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 36, 560, 78),
+        f'<p style="font-size:28px;text-align:center">{WESTERN_NAME}</p>',
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 80, 560, 108),
+        f"<p style='font-size:11px;text-align:center'>"
+        f"{PHONE} • {WESTERN_EMAIL} • {LINKEDIN} • {GITHUB}</p>",
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 140, 560, 220),
+        f"<p>Experience</p><p>{COMPANY} 2019-2023 Python</p>",
+    )
+    return _bytes(document)
+
+
+ALL_CAPS_NAME = "NGUYEN VAN MAU ANH"
+JOB_TITLE = "Software Developer"
+
+
+def all_caps_title_cv() -> bytes:
+    """All-caps four-token header with a job title tight underneath.
+
+    Designed CVs often extract those two lines as one, so the title must not
+    swallow the name.
+    """
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 30, 560, 78),
+        f'<p style="font-size:28px;text-align:center">{ALL_CAPS_NAME}</p>',
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 72, 560, 100),
+        f'<p style="font-size:14px;text-align:center">{JOB_TITLE}</p>',
+    )
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 110, 560, 150),
+        f"<p>Ho Chi Minh City | Phone: {PHONE} | Email: {EMAIL} | LinkedIn | Github</p>",
+    )
+    return _bytes(document)
+
+
+def education_project_cv() -> bytes:
+    """Education bullets that contain ``multi-agent`` (must not be read as Age)."""
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_htmlbox(pymupdf.Rect(40, 30, 560, 70), f'<p style="font-size:22px">{NAME}</p>')
+    page.insert_htmlbox(pymupdf.Rect(40, 80, 560, 110), f"<p>Email: {EMAIL} | {PHONE}</p>")
+    page.insert_htmlbox(
+        pymupdf.Rect(40, 130, 560, 280),
+        "<p>Education</p>"
+        "<p>Example University Bachelor Computer Science</p>"
+        "<p>Cybersecurity Multi-agent System: built a Python service "
+        f"for {COMPANY} (Example Conf 2023)</p>",
+    )
+    return _bytes(document)
 
 
 def cv_pdf(line_height: float = 1.2) -> bytes:
@@ -132,6 +252,180 @@ def _optional_content(document: pymupdf.Document) -> None:
     page.insert_text((300, 520), HIDDEN, fontsize=11, oc=ocg)
     page.draw_rect(pymupdf.Rect(300, 530, 340, 560), color=(1, 0, 0), oc=ocg)
     _image(page, pymupdf.Rect(480, 600, 540, 660), oc=ocg)
+
+
+def _add_hidden_ocmd(document: pymupdf.Document, *, policy: str = "AllOn") -> int:
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    return document.set_ocmd(ocgs=[ocg], policy=policy)
+
+
+def with_ocmd_allon(data: bytes) -> bytes:
+    """Hidden OCMD AllOn of an off group: MuPDF draws it, the PDF rules hide it."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocmd = _add_hidden_ocmd(document)
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    return _bytes(document)
+
+
+def with_inline_oc_property(data: bytes) -> bytes:
+    """Named ``/Properties`` entry holds the OCMD dict itself (Canva/Figma style)."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocmd = _add_hidden_ocmd(document)
+    page = document[0]
+    page.insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    _inline_named_ocmd(document, page, ocmd)
+    return _bytes(document)
+
+
+def with_inline_bdc_oc(data: bytes) -> bytes:
+    """Content stream uses ``/OC << /Type /OCMD ... >> BDC`` instead of a name."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], policy="AllOn")
+    page = document[0]
+    page.insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    contents = page.read_contents()
+    inline = f"<< /Type /OCMD /OCGs [{ocg} 0 R] /P /AllOn >>".encode()
+    replaced = re.sub(rb"/OC /[^\s]+ BDC", b"/OC " + inline + b" BDC", contents, count=1)
+    if replaced == contents:
+        raise AssertionError("synthetic fixture did not find an OC BDC marker")
+    xref = document.get_new_xref()
+    document.update_object(xref, "<<>>")
+    document.update_stream(xref, replaced)
+    page.set_contents(xref)
+    return _bytes(document)
+
+
+def with_inline_xobject_oc(data: bytes) -> bytes:
+    """Image XObject carries an inline OCMD dict on ``/OC``."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    page = document[0]
+    _image(page, pymupdf.Rect(480, 600, 540, 660), oc=ocg)
+    images = page.get_images(full=True)
+    if not images:
+        raise AssertionError("synthetic fixture did not embed an image")
+    document.xref_set_key(images[0][0], "OC", f"<< /Type /OCMD /OCGs [{ocg} 0 R] /P /AllOn >>")
+    return _bytes(document)
+
+
+def with_nested_ocmd(data: bytes) -> bytes:
+    """OCMD whose ``/OCGs`` array points at another OCMD, not an OCG."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    inner = document.set_ocmd(ocgs=[ocg], policy="AllOn")
+    outer = document.get_new_xref()
+    document.update_object(outer, f"<< /Type /OCMD /OCGs [{inner} 0 R] /P /AllOn >>")
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=outer)
+    return _bytes(document)
+
+
+def with_ocmd_ve_and(data: bytes) -> bytes:
+    """VE ``And`` of an off group is hidden (same outcome as AllOn)."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], ve=["and", ocg])
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    return _bytes(document)
+
+
+def with_ocmd_ve_not_visible(data: bytes) -> bytes:
+    """VE ``Not`` of an off group is visible and must stay."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], ve=["not", ocg])
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    return _bytes(document)
+
+
+def with_unsupported_ve(data: bytes) -> bytes:
+    """Xor is not a PDF visibility operator; the block must be over-stripped."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], policy="AllOn")
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    document.update_object(ocmd, f"<< /Type /OCMD /VE [ /Xor {ocg} 0 R ] >>")
+    return _bytes(document)
+
+
+def with_indirect_ocmd_ocgs(data: bytes) -> bytes:
+    """OCMD ``/OCGs`` is an indirect array, a form Canva-style exporters use."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], policy="AllOn")
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    array = document.get_new_xref()
+    document.update_object(array, f"[{ocg} 0 R]")
+    document.update_object(ocmd, f"<< /Type /OCMD /OCGs {array} 0 R /P /AllOn >>")
+    return _bytes(document)
+
+
+def with_indirect_ocmd_ve(data: bytes) -> bytes:
+    """Visibility expression stored as an indirect array."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    ocmd = document.set_ocmd(ocgs=[ocg], ve=["and", ocg])
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
+    array = document.get_new_xref()
+    document.update_object(array, f"[ /And {ocg} 0 R ]")
+    document.update_object(ocmd, f"<< /Type /OCMD /VE {array} 0 R >>")
+    return _bytes(document)
+
+
+def with_unknown_oc_name(data: bytes) -> bytes:
+    """Stream names a Properties key that does not exist; treat the block as hidden."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    ocg = document.add_ocg("Synthetic hidden layer", on=False)
+    page = document[0]
+    page.insert_text((300, 520), HIDDEN, fontsize=11, oc=ocg)
+    contents = page.read_contents()
+    replaced = re.sub(rb"/OC /[^\s]+ BDC", b"/OC /Ghost BDC", contents, count=1)
+    if replaced == contents:
+        raise AssertionError("synthetic fixture did not find an OC BDC marker")
+    xref = document.get_new_xref()
+    document.update_object(xref, "<<>>")
+    document.update_stream(xref, replaced)
+    page.set_contents(xref)
+    return _bytes(document)
+
+
+def with_cyclic_ocmd(data: bytes) -> bytes:
+    """Two OCMDs that name each other; membership cannot be walked."""
+    document = pymupdf.open(stream=data, filetype="pdf")
+    document.add_ocg("Synthetic unused off layer", on=False)
+    first = document.get_new_xref()
+    second = document.get_new_xref()
+    document.update_object(first, f"<< /Type /OCMD /OCGs [{second} 0 R] /P /AllOn >>")
+    document.update_object(second, f"<< /Type /OCMD /OCGs [{first} 0 R] /P /AllOn >>")
+    document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=first)
+    return _bytes(document)
+
+
+def with_visible_and_hidden_layers(data: bytes) -> bytes:
+    document = pymupdf.open(stream=data, filetype="pdf")
+    page = document[0]
+    visible = document.add_ocg("Synthetic visible layer", on=True)
+    hidden = document.add_ocg("Synthetic hidden layer", on=False)
+    page.insert_text((40, 780), "Keep visible layer", fontsize=11, oc=visible)
+    page.insert_text((300, 520), HIDDEN, fontsize=11, oc=hidden)
+    return _bytes(document)
+
+
+def _inline_named_ocmd(document: pymupdf.Document, page: pymupdf.Page, ocmd: int) -> None:
+    kind, value = document.xref_get_key(page.xref, "Resources")
+    if kind != "xref":
+        raise AssertionError("synthetic page resources are not an indirect dict")
+    res_xref = int(value.split()[0])
+    raw = document.xref_object(res_xref)
+    needle = f"/MC0 {ocmd} 0 R"
+    if needle not in raw:
+        # PyMuPDF names the first OC property MC0; accept MC<n>.
+        match = re.search(rf"/MC\d+ {ocmd} 0 R", raw)
+        if match is None:
+            raise AssertionError("synthetic fixture did not find the OC property")
+        needle = match.group(0)
+    replacement = needle.split()[0] + " " + document.xref_object(ocmd)
+    document.update_object(res_xref, raw.replace(needle, replacement))
 
 
 def _invisible_text(document: pymupdf.Document) -> None:

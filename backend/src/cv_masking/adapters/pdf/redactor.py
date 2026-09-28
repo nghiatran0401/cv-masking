@@ -10,6 +10,7 @@ PDF that is re-opened and checked before it is returned.
 import math
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Final
 
 import pymupdf
@@ -23,6 +24,11 @@ from cv_masking.adapters.pdf.hidden import (
     invisible_boxes,
     scan_hidden,
     silence_mupdf,
+)
+from cv_masking.adapters.pdf.optional_content import (
+    oc_is_hidden,
+    oc_properties,
+    xobject_is_hidden,
 )
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.findings import BoundingBox, RedactionRegion
@@ -40,6 +46,8 @@ _LABEL_PADDING: Final = 1.0
 _SAME_LINE_RATIO: Final = 0.5
 _TRIM_GAP: Final = 0.25
 _RENDER_SCALE: Final = 0.5
+_RENDER_PAD_PT: Final = 3.0
+"""MuPDF may draw spec-hidden OCMD content; after stripping, only those pixels may change."""
 _MAX_FORM_DEPTH: Final = 8
 _BLACK: Final = (0.0, 0.0, 0.0)
 _LABEL_GREY: Final = (0.9, 0.9, 0.9)
@@ -145,7 +153,7 @@ def _sanitize(
     same ``apply_redactions`` call as the regions.
     """
     try:
-        if HiddenContentCategory.OPTIONAL_CONTENT in found:
+        if HiddenContentCategory.OPTIONAL_CONTENT in found or _has_oc_catalog(document):
             _remove_optional_content(document)
         if HiddenContentCategory.ANNOTATIONS in found:
             _remove_annotations(document)
@@ -320,18 +328,41 @@ def _remove_javascript(document: pymupdf.Document) -> None:
             document.update_object(xref, "<<>>")
 
 
+@dataclass(frozen=True, slots=True)
+class _PageSnap:
+    samples: bytes
+    width: int
+    height: int
+    x0: float
+    y0: float
+    words: tuple[tuple[str, float, float, float, float], ...]
+    drawings: tuple[tuple[float, float, float, float, str], ...]
+    hidden_images: tuple[tuple[float, float, float, float], ...]
+
+
+def _has_oc_catalog(document: pymupdf.Document) -> bool:
+    """Designer PDFs often keep every group ON; the catalog still has to be dropped."""
+    kind, _value = document.xref_get_key(document.pdf_catalog(), "OCProperties")
+    return str(kind) != "null"
+
+
 def _remove_optional_content(document: pymupdf.Document) -> None:
     """Drop painting in hidden layers, then the layer definitions themselves.
 
-    Rendering must be identical before and after: that proves no visible
-    content was lost and no hidden content became visible.
+    Some viewers draw spec-hidden OCMD content (AllOn of an off group, some
+    visibility expressions). Membership that cannot be parsed is treated as
+    hidden. A render change confined to that content is accepted; new
+    extractable text or pixels outside those boxes is not.
     """
     hidden = {
         int(xref)
         for xref, info in (document.get_ocgs() or {}).items()
         if isinstance(info, dict) and not bool(info.get("on", True))
     }
-    before = [_render(document.load_page(index)) for index in range(document.page_count)]
+    before = [
+        _page_snap(document, document.load_page(index), hidden)
+        for index in range(document.page_count)
+    ]
     filtered: set[int] = set()
     blank: set[int] = set()
     for index in range(document.page_count):
@@ -348,8 +379,13 @@ def _remove_optional_content(document: pymupdf.Document) -> None:
         document.update_object(xref, "<< /Type /XObject /Subtype /Form /BBox [0 0 0 0] >>")
         document.update_stream(xref, b"")
     document.xref_set_key(document.pdf_catalog(), "OCProperties", "null")
-    after = [_render(document.load_page(index)) for index in range(document.page_count)]
-    if before != after:
+    after = [
+        _page_snap(document, document.load_page(index), hidden)
+        for index in range(document.page_count)
+    ]
+    if any(
+        left.samples != right.samples for left, right in zip(before, after, strict=True)
+    ) and not _hidden_only_render_change(before, after):
         raise ContentError("hidden-layer removal changed the rendered page")
 
 
@@ -370,10 +406,10 @@ def _strip(
     """
     if depth > _MAX_FORM_DEPTH:
         raise ContentError("form XObjects nested too deeply")
-    properties = _named_refs(document, owner, "Resources/Properties")
+    properties = oc_properties(document, owner)
     xobjects = _named_refs(document, owner, "Resources/XObject")
     hidden_xobjects = {
-        name for name, xref in xobjects.items() if _xobject_hidden(document, xref, hidden)
+        name for name, xref in xobjects.items() if xobject_is_hidden(document, xref, hidden)
     }
     blank.update(xobjects[name] for name in hidden_xobjects)
     for name, xref in xobjects.items():
@@ -399,41 +435,144 @@ def _strip(
 
     def hidden_property(name: bytes) -> bool:
         if name not in properties:
-            raise ContentError("unknown optional-content name")
-        return _oc_hidden(document, properties[name], hidden)
+            return True
+        kind, value = properties[name]
+        return oc_is_hidden(document, kind, value, hidden)
+
+    def hidden_inline(raw: bytes) -> bool:
+        return oc_is_hidden(document, "dict", raw.decode("latin-1"), hidden)
 
     return strip_hidden(
-        data, hidden_property=hidden_property, hidden_xobject=hidden_xobjects.__contains__
+        data,
+        hidden_property=hidden_property,
+        hidden_xobject=hidden_xobjects.__contains__,
+        hidden_inline=hidden_inline,
     )
 
 
-def _xobject_hidden(document: pymupdf.Document, xref: int, hidden: set[int]) -> bool:
-    kind, value = document.xref_get_key(xref, "OC")
-    if kind == "null":
-        return False
-    if kind != "xref":
-        raise ContentError("inline optional-content dictionary")
-    return _oc_hidden(document, _first_ref(value), hidden)
+def _page_snap(document: pymupdf.Document, page: pymupdf.Page, hidden: set[int]) -> _PageSnap:
+    pixmap = page.get_pixmap(
+        matrix=pymupdf.Matrix(_RENDER_SCALE, _RENDER_SCALE), alpha=False, annots=False
+    )
+    words = tuple(
+        (str(item[4]), float(item[0]), float(item[1]), float(item[2]), float(item[3]))
+        for item in page.get_text("words")
+    )
+    drawings = tuple(
+        (
+            float(rect.x0),
+            float(rect.y0),
+            float(rect.x1),
+            float(rect.y1),
+            str(drawing.get("layer") or ""),
+        )
+        for drawing in page.get_drawings() or []
+        for rect in (_as_rect(drawing.get("rect")),)
+        if rect is not None
+    )
+    hidden_images = tuple(
+        (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
+        for info in page.get_image_info(xrefs=True) or []
+        if isinstance(info, dict)
+        for xref in (info.get("xref"),)
+        for rect in (info.get("bbox"),)
+        if isinstance(xref, int)
+        and isinstance(rect, list | tuple)
+        and len(rect) == 4
+        and xobject_is_hidden(document, xref, hidden)
+    )
+    return _PageSnap(
+        samples=bytes(pixmap.samples),
+        width=int(pixmap.width),
+        height=int(pixmap.height),
+        x0=float(page.rect.x0),
+        y0=float(page.rect.y0),
+        words=words,
+        drawings=drawings,
+        hidden_images=hidden_images,
+    )
 
 
-def _oc_hidden(document: pymupdf.Document, xref: int, hidden: set[int]) -> bool:
-    kind = document.xref_get_key(xref, "Type")[1]
-    if kind == "/OCG":
-        return xref in hidden
-    if kind != "/OCMD" or document.xref_get_key(xref, "VE")[0] != "null":
-        raise ContentError("unsupported optional-content membership")
-    groups_kind, groups = document.xref_get_key(xref, "OCGs")
-    refs = [int(ref) for ref in _REF_RE.findall(groups)] if groups_kind != "null" else []
-    if not refs:
-        return False
-    on = [ref not in hidden for ref in refs]
-    policy = document.xref_get_key(xref, "P")[1]
-    visible = {
-        "/AllOn": all(on),
-        "/AnyOff": not all(on),
-        "/AllOff": not any(on),
-    }.get(policy, any(on))
-    return not visible
+def _as_rect(value: object) -> pymupdf.Rect | None:
+    if value is None:
+        return None
+    try:
+        rect = pymupdf.Rect(value)
+    except (TypeError, ValueError):
+        return None
+    return rect
+
+
+def _hidden_only_render_change(before: list[_PageSnap], after: list[_PageSnap]) -> bool:
+    for left, right in zip(before, after, strict=True):
+        if left.samples == right.samples:
+            continue
+        if _new_words(left, right):
+            return False
+        allowed = _disappeared_rects(left, right)
+        if not allowed or not _pixels_confined(left, right, allowed):
+            return False
+    return True
+
+
+def _word_key(
+    word: tuple[str, float, float, float, float],
+) -> tuple[str, float, float, float, float]:
+    text, x0, y0, x1, y1 = word
+    return (text, round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1))
+
+
+def _drawing_key(
+    drawing: tuple[float, float, float, float, str],
+) -> tuple[float, float, float, float, str]:
+    x0, y0, x1, y1, layer = drawing
+    return (round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1), layer)
+
+
+def _new_words(before: _PageSnap, after: _PageSnap) -> bool:
+    previous = {_word_key(word) for word in before.words}
+    return any(_word_key(word) not in previous for word in after.words)
+
+
+def _disappeared_rects(before: _PageSnap, after: _PageSnap) -> list[pymupdf.Rect]:
+    remaining_words = {_word_key(word) for word in after.words}
+    remaining_drawings = {_drawing_key(drawing) for drawing in after.drawings}
+    rects = [
+        pymupdf.Rect(word[1], word[2], word[3], word[4])
+        for word in before.words
+        if _word_key(word) not in remaining_words
+    ]
+    rects.extend(
+        pymupdf.Rect(drawing[0], drawing[1], drawing[2], drawing[3])
+        for drawing in before.drawings
+        if _drawing_key(drawing) not in remaining_drawings
+    )
+    rects.extend(pymupdf.Rect(*box) for box in before.hidden_images)
+    return rects
+
+
+def _pixels_confined(before: _PageSnap, after: _PageSnap, allowed: list[pymupdf.Rect]) -> bool:
+    grown = [
+        pymupdf.Rect(
+            rect.x0 - _RENDER_PAD_PT,
+            rect.y0 - _RENDER_PAD_PT,
+            rect.x1 + _RENDER_PAD_PT,
+            rect.y1 + _RENDER_PAD_PT,
+        )
+        for rect in allowed
+    ]
+    width = before.width
+    for index in range(width * before.height):
+        offset = index * 3
+        if before.samples[offset : offset + 3] == after.samples[offset : offset + 3]:
+            continue
+        point_x = before.x0 + (index % width) / _RENDER_SCALE
+        point_y = before.y0 + (index // width) / _RENDER_SCALE
+        if not any(
+            rect.x0 <= point_x <= rect.x1 and rect.y0 <= point_y <= rect.y1 for rect in grown
+        ):
+            return False
+    return True
 
 
 def _resources_owner(document: pymupdf.Document, xref: int) -> int | None:
@@ -468,13 +607,6 @@ def _first_ref(value: str) -> int:
     if match is None:
         raise ContentError("expected an indirect reference")
     return int(match.group(1))
-
-
-def _render(page: pymupdf.Page) -> bytes:
-    pixmap = page.get_pixmap(
-        matrix=pymupdf.Matrix(_RENDER_SCALE, _RENDER_SCALE), alpha=False, annots=False
-    )
-    return bytes(pixmap.samples)
 
 
 def _check_output(output: bytes, pages: int, regions: tuple[RedactionRegion, ...]) -> None:

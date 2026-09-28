@@ -59,8 +59,8 @@ def _has(service: DetectionService, text: str, entity: EntityType) -> bool:
         (lambda: "Dia chi: 12 Pho Mau", EntityType.POSTAL_ADDRESS),
         (lambda: "Ngay sinh: 01/01/1990", EntityType.DATE_OF_BIRTH),
         (lambda: "Tuoi: 34", EntityType.DATE_OF_BIRTH),
+        (lambda: "Age: 34", EntityType.DATE_OF_BIRTH),
         (lambda: "Muc luong: 15 trieu", EntityType.SALARY),
-        (lambda: f"Portfolio {URL}", EntityType.PERSONAL_URL),
     ],
     ids=(
         "email",
@@ -79,14 +79,33 @@ def _has(service: DetectionService, text: str, entity: EntityType) -> bool:
         "address",
         "dob",
         "age",
+        "age_en",
         "salary",
-        "url",
     ),
 )
 def test_detects_each_stage7_type(
     service: DetectionService, builder: Callable[[], str], entity: EntityType
 ) -> None:
     assert _has(service, builder(), entity)
+
+
+def test_dob_label_does_not_take_employment_years(service: DetectionService) -> None:
+    text = "Ngay sinh: 01/01/1990 Experience Example Bank Ltd 2019-2023"
+    outcome = service.detect(extracted(text), MaskingPolicy())
+    dobs = [match for match in outcome.matches if match.entity_type is EntityType.DATE_OF_BIRTH]
+    assert len(dobs) == 1
+    assert text[dobs[0].start : dobs[0].end] == "01/01/1990"
+
+
+def test_a_redacted_contact_line_is_not_a_new_dob(service: DetectionService) -> None:
+    text = "Ngay sinh: [DOB] | LinkedIn: [URL] | Github: [URL]"
+    types = set(_types(extracted(text), service))
+    assert EntityType.DATE_OF_BIRTH not in types
+    assert EntityType.PERSONAL_URL not in types
+
+
+def test_year_of_birth_after_nam_sinh_is_detected(service: DetectionService) -> None:
+    assert _has(service, "Nam sinh: 1990", EntityType.DATE_OF_BIRTH)
 
 
 @pytest.mark.parametrize(
@@ -99,6 +118,10 @@ def test_detects_each_stage7_type(
         (lambda: f"So hieu {PASSPORT}", EntityType.PASSPORT),
         (lambda: "Nam tinh nguyen vien", EntityType.GENDER),
         (lambda: "Lam viec tai Ha Noi 2020", EntityType.POSTAL_ADDRESS),
+        (lambda: "Built a multi-agent system in Python", EntityType.DATE_OF_BIRTH),
+        (lambda: f"Portfolio {URL}", EntityType.PERSONAL_URL),
+        (lambda: f"LinkedIn: {URL}", EntityType.PERSONAL_URL),
+        (lambda: "Lien he: https://example.test/portfolio", EntityType.PERSONAL_URL),
     ],
     ids=(
         "work_years",
@@ -108,6 +131,10 @@ def test_detects_each_stage7_type(
         "unlabeled_passport",
         "nam",
         "city_year",
+        "agent",
+        "portfolio_url",
+        "linkedin",
+        "contact_http",
     ),
 )
 def test_false_positives_are_not_detected(
@@ -174,13 +201,13 @@ def test_pdf_part_maps_to_boxes(service: DetectionService) -> None:
     assert location.boxes
 
 
-def test_low_confidence_sets_review(service: DetectionService) -> None:
-    document = extracted("Lien he: https://example.test/portfolio")
-    outcome = service.detect(document, MaskingPolicy())
-    urls = [item for item in outcome.findings if item.entity_type is EntityType.PERSONAL_URL]
-    assert len(urls) == 1
-    assert urls[0].requires_review
-    assert ReviewReason.DETECT_LOW_CONFIDENCE in outcome.review
+def test_personal_urls_are_not_detected(service: DetectionService) -> None:
+    outcome = service.detect(
+        extracted(f"Lien he: {URL}\nGitHub: https://github.com/mau-example"),
+        MaskingPolicy(),
+    )
+    assert EntityType.PERSONAL_URL not in {match.entity_type for match in outcome.matches}
+    assert ReviewReason.DETECT_LOW_CONFIDENCE not in outcome.review
 
 
 def test_corpus_precision_and_recall(service: DetectionService) -> None:
@@ -195,6 +222,7 @@ def test_corpus_precision_and_recall(service: DetectionService) -> None:
         precision = len(true_pos) / len(pred_spans) if pred_spans else 0.0
         recall = len(true_pos) / len(gold_spans) if gold_spans else 0.0
         assert (precision, recall) == (1.0, 1.0), entity.value
+    assert EntityType.PERSONAL_URL not in {kind for kind, _, _ in predicted}
 
 
 @settings(deadline=None, derandomize=True, database=None, max_examples=25)

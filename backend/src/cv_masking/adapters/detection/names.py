@@ -120,6 +120,14 @@ EXCLUDED_TOKENS: Final = frozenset(
         "senior",
         "junior",
         "tnhh",
+        "programming",
+        "languages",
+        "frameworks",
+        "libraries",
+        "databases",
+        "devops",
+        "tools",
+        "cloud",
     }
 )
 EXCLUDED_PHRASES: Final = (
@@ -150,6 +158,9 @@ EXCLUDED_PHRASES: Final = (
     "giam doc",
     "ke toan",
     "thuc tap",
+    "programming languages",
+    "frameworks libraries",
+    "databases tools",
 )
 _WEAK_EMAIL_TOKENS: Final = frozenset({"van", "thi"})
 _SEPARATOR_RE: Final = re.compile(r"\s*(?:\||•|·|;|,|\(|\s[-\u2013\u2014]\s|\t|\s{2,})\s*")
@@ -199,7 +210,15 @@ class NameAnchor:
         return tuple(fold(token) for token in self.tokens)
 
 
+def _is_trailing_initial(token: str) -> bool:
+    """Vietnamese headers often abbreviate the given name as a single capital (``A``)."""
+    stripped = token.rstrip(".")
+    return len(stripped) == 1 and stripped.isalpha() and stripped.isupper()
+
+
 def is_name_token(token: str) -> bool:
+    if _is_trailing_initial(token):
+        return True
     if len(token) == 2 and token[1] == "." and token[0].isalpha() and token[0].isupper():
         return True
     pieces = token.split("-")
@@ -225,9 +244,15 @@ def is_excluded(tokens: tuple[str, ...]) -> bool:
 def is_name_shaped(tokens: tuple[str, ...], *, minimum: int = 2) -> bool:
     if not minimum <= len(tokens) <= 5:
         return False
-    if not all(is_name_token(token) for token in tokens):
+    initials = 0
+    while initials < len(tokens) and _is_trailing_initial(tokens[-(initials + 1)]):
+        initials += 1
+    core = tokens[: len(tokens) - initials]
+    if not core or any(_is_trailing_initial(token) for token in core):
         return False
-    if all(len(token) == 2 and token.endswith(".") for token in tokens):
+    if not all(is_name_token(token) for token in core):
+        return False
+    if all(len(token) == 2 and token.endswith(".") for token in core):
         return False
     return not is_excluded(tokens)
 
@@ -290,7 +315,11 @@ def label_names(view: PartView, index: int) -> tuple[list[NameAnchor], list[Hit]
 
 
 def header_candidate(view: PartView, index: int, emails: frozenset[str]) -> NameAnchor | None:
-    """Best name-shaped line near the top of a contact part, scored by explicit signals."""
+    """Best name-shaped run near the top of a contact part, scored by explicit signals.
+
+    Designed CVs put the name on the first line with no ``Name:`` label, often on
+    the same extracted line as phone, email, and profile URLs.
+    """
     heights = _line_heights(view)
     tallest = max(heights.values(), default=0.0)
     typical = statistics.median(heights.values()) if len(heights) >= 2 else 0.0
@@ -301,21 +330,22 @@ def header_candidate(view: PartView, index: int, emails: frozenset[str]) -> Name
             continue
         if rank >= _HEADER_LINES:
             break
-        segment = _first_segment(view.text, line.start, line.end)
+        if _LABEL_RE.match(line.folded) is not None:
+            rank += 1
+            continue
+        segment = _leading_name_span(view.text, line.start, line.end)
         current_rank = rank
         rank += 1
         if segment is None:
             continue
         start, end, tokens = segment
-        if not is_name_shaped(tokens):
-            continue
         score = _HEADER_BASE
         signals = ["top_of_page"]
         if current_rank == 0:
             score += 0.05
             signals.append("first_line")
         folded = tuple(fold(token) for token in tokens)
-        if folded[0] in VN_SURNAMES:
+        if folded[0] in VN_SURNAMES or folded[-1] in VN_SURNAMES:
             score += 0.10
             signals.append("vn_surname")
         height = heights.get(line_index, 0.0)
@@ -422,9 +452,79 @@ def _variants(tokens: tuple[str, ...]) -> list[tuple[str, ...]]:
 
 
 def _email_agrees(folded: tuple[str, ...], emails: frozenset[str]) -> bool:
-    strong = [token for token in folded if token not in _WEAK_EMAIL_TOKENS]
-    matched = sum(1 for token in strong if token in emails)
-    return matched >= min(2, len(strong)) and matched > 0
+    strong = [token for token in folded if token not in _WEAK_EMAIL_TOKENS and len(token) >= 3]
+    if not strong or not emails:
+        return False
+    exact = sum(1 for token in strong if token in emails)
+    if exact >= min(2, len(strong)) and exact > 0:
+        return True
+    return any(_token_in_email_piece(token, piece) for token in strong for piece in emails)
+
+
+def _token_in_email_piece(token: str, piece: str) -> bool:
+    if len(piece) < 3:
+        return False
+    if token == piece:
+        return True
+    if len(token) >= 4 and token in piece:
+        return True
+    return piece.startswith(token) or piece.endswith(token)
+
+
+def _is_contact_token(token: str) -> bool:
+    folded = fold(token)
+    if "@" in token or sum(char.isdigit() for char in token) >= 3:
+        return True
+    return any(marker in folded for marker in ("linkedin", "github", "facebook", "http", "www."))
+
+
+def _is_name_stop_token(token: str) -> bool:
+    if not token or _is_contact_token(token) or not is_name_token(token):
+        return True
+    return fold(token).strip(".") in EXCLUDED_TOKENS
+
+
+def _leading_name_span(text: str, start: int, end: int) -> tuple[int, int, tuple[str, ...]] | None:
+    """The unlabeled display name at the start of a header line.
+
+    Stops before a phone, email, URL, job title, or other non-name token so a
+    designed header that extracted onto the same line as the title still yields
+    the name.
+    """
+    while start < end and (text[start].isspace() or text[start] in "-*•·"):
+        start += 1
+    tokens: list[str] = []
+    cursor = start
+    name_end = start
+    while cursor < end:
+        while cursor < end and text[cursor].isspace():
+            cursor += 1
+        if cursor >= end or text[cursor] in "|•·;,:":
+            break
+        token_start = cursor
+        while cursor < end and (not text[cursor].isspace()) and text[cursor] not in "|•·;,:":
+            cursor += 1
+        token = text[token_start:cursor].strip("()[]")
+        if _is_trailing_initial(token) and tokens:
+            tokens.append(token)
+            name_end = cursor
+            break
+        if _is_name_stop_token(token):
+            break
+        tokens.append(token)
+        name_end = cursor
+        if len(tokens) == 5:
+            break
+    shaped = tuple(tokens)
+    if not is_name_shaped(shaped):
+        return None
+    after = name_end
+    while after < end and text[after].isspace():
+        after += 1
+    if after < end and text[after] in ":\uff1a":
+        # "Programming Languages: Java" is a category label, not an unlabeled name.
+        return None
+    return start, name_end, shaped
 
 
 def _first_segment(

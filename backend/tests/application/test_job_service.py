@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import pytest
 from service_helpers import (
+    SYNTHETIC_INPUT,
     ManualClock,
     queued_document,
     uploaded_document,
@@ -50,7 +51,7 @@ def test_full_lifecycle_finishes_the_batch_and_keeps_only_the_output(
     assert _objects(root, "outputs") == [f"{done.output_ref}.pdf"]
 
 
-def test_failed_verification_deletes_the_output(
+def test_failed_verification_keeps_residual_output_for_inspection(
     service: JobService,
     input_store: LocalInputStore,
     output_store: LocalOutputStore,
@@ -58,9 +59,22 @@ def test_failed_verification_deletes_the_output(
 ) -> None:
     batch = service.create_batch()
     job = verifying_document(service, input_store, output_store, batch.batch_id)
-    verified(
+    failed = verified(
         service, job, VerificationOutcome.FAILED, frozenset({ErrorCode.VERIFY_RESIDUAL_FINDING})
     )
+    assert _objects(root, "outputs") == [f"{failed.output_ref}.pdf"]
+    assert _objects(root, "inputs") == []
+
+
+def test_invalid_output_is_deleted(
+    service: JobService,
+    input_store: LocalInputStore,
+    output_store: LocalOutputStore,
+    root: StorageRoot,
+) -> None:
+    batch = service.create_batch()
+    job = verifying_document(service, input_store, output_store, batch.batch_id)
+    verified(service, job, VerificationOutcome.FAILED, frozenset({ErrorCode.VERIFY_OUTPUT_INVALID}))
     assert _objects(root, "outputs") == []
     assert _objects(root, "inputs") == []
 
@@ -107,6 +121,27 @@ def test_remove_document_only_while_the_batch_is_open(
     with pytest.raises(InvalidTransitionError):
         service.remove_document(kept.document_id)
     assert _objects(root, "inputs") == [f"{kept.input_ref}.pdf"]
+
+
+def test_replace_failed_reopens_the_batch_and_keeps_the_count(
+    service: JobService, input_store: LocalInputStore
+) -> None:
+    batch = service.create_batch()
+    job = uploaded_document(service, input_store, batch.batch_id)
+    batch = service.get_batch(batch.batch_id)
+    service.start_batch(batch.batch_id, expected_version=batch.version)
+    service.apply(job.document_id, lambda current, at: current.start_validation(at))
+    service.apply(job.document_id, lambda current, at: current.fail(ErrorCode.INTERNAL_ERROR, at))
+    assert service.get_batch(batch.batch_id).state is BatchState.FINISHED
+    stored = input_store.save_stream(DocumentFormat.PDF, [SYNTHETIC_INPUT], max_bytes=1_000_000)
+    replacement = service.replace_failed_with_upload(job.document_id, stored)
+    assert replacement.document_id != job.document_id
+    assert replacement.state is DocumentState.UPLOADED
+    current = service.get_batch(batch.batch_id)
+    assert current.state is BatchState.RUNNING
+    assert current.document_count == 1
+    with pytest.raises(RecordNotFoundError):
+        service.get_document(job.document_id)
 
 
 def test_purge_deletes_every_file_and_row_of_that_batch_only(

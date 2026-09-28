@@ -8,7 +8,9 @@ masking-policy.md §1.7:
   attachments, links, hidden content);
 - every distinctive source value (names, contacts, identifiers, full dates of
   birth, numbered addresses) is searched for in the output's normalized text
-  and in its raw objects;
+  and in its raw objects. A name hit that lies only inside a kept personal
+  URL (D-43) is not a residual;
+
 - no output word sits inside a redacted PDF finding box, unless it is a label;
 - each DOCX part's text equals the source text with every redacted range
   replaced by its label (whitespace ignored: emptied paragraphs change breaks);
@@ -23,7 +25,7 @@ search. They are never stored, logged, or returned. The job transition
 import logging
 import re
 import unicodedata
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from typing import Final
 
 from cv_masking.application.detection import DetectionOutcome
@@ -39,7 +41,7 @@ from cv_masking.domain.policy import (
     EntityType,
     MaskingPolicy,
 )
-from cv_masking.domain.verification import VerificationOutcome, VerificationResult
+from cv_masking.domain.verification import ResidualCounts, VerificationOutcome, VerificationResult
 from cv_masking.ports.clock import Clock
 from cv_masking.ports.detection import DocumentDetector
 from cv_masking.ports.extraction import ExtractedDocument, TextPart
@@ -49,7 +51,7 @@ from cv_masking.ports.verification import InspectionError, OutputInspector
 logger = logging.getLogger("cv_masking.verification")
 
 VERIFIER_ID: Final = "cv_masking.verifier"
-VERIFIER_VERSION: Final = "1.0.0"
+VERIFIER_VERSION: Final = "1.1.1"
 MIN_SEARCHED_CHARS: Final = 6
 """Shorter values (``Nam``, ``1990``) occur in unrelated kept text; the position
 check and the detector rerun cover them instead."""
@@ -60,13 +62,17 @@ _SHAPE_TYPES: Final = frozenset(
         EntityType.PHONE,
         EntityType.NATIONAL_ID,
         EntityType.PASSPORT,
-        EntityType.PERSONAL_URL,
     }
 )
 _NUMBERED_TYPES: Final = frozenset({EntityType.DATE_OF_BIRTH, EntityType.POSTAL_ADDRESS})
 _LABELS: Final = tuple(sorted(set(REPLACEMENT_LABELS.values()), key=len, reverse=True))
 _TOKEN_RE: Final = re.compile(r"[a-z0-9]+")
 _GAP: Final = r"[^a-z0-9]{0,3}"
+_KEPT_URL_RE: Final = re.compile(
+    r"(?:https?://(?:www\.)?|www\.)\S+"
+    r"|(?:linkedin|github|gitlab|facebook|instagram)\.com/\S+"
+    r"|(?:zalo\.me|t\.me)/\S+"
+)
 _COMBINING_RE: Final = re.compile(
     "[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]"
 )
@@ -136,14 +142,18 @@ class VerificationService:
         failures = set(inspection.failures)
         review = False
         document = inspection.document
+        hits: dict[EntityType, tuple[int, set[int]]] = {}
         if document is not None:
             redacted = policy.redacted_types
-            if _values_remain(source_document, detection, redacted, document, inspection.raw):
+            if _record_value_residuals(
+                source_document, detection, redacted, document, inspection.raw, hits
+            ):
                 failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
-            if _words_remain_in_boxes(detection, redacted, document):
+            if _record_box_residuals(detection, redacted, document, hits):
                 failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
             if _docx_text_differs(source_document, detection, redacted, document):
                 failures.add(ErrorCode.VERIFY_RESIDUAL_FINDING)
+                _record_docx_residuals(detection, redacted, hits)
             try:
                 certain, uncertain = self._rerun(document, redacted)
             except _DETECTOR_ERRORS:
@@ -151,6 +161,8 @@ class VerificationService:
                 return VerificationAttempt(None, ErrorCode.INTERNAL_ERROR)
             if certain:
                 failures.add(ErrorCode.VERIFY_RESIDUAL_DETECTION)
+                for entity_type, page in certain:
+                    _add_hit(hits, entity_type, page)
             review = uncertain > 0
         if failures:
             outcome = VerificationOutcome.FAILED
@@ -165,6 +177,7 @@ class VerificationService:
             verifier_id=VERIFIER_ID,
             verifier_version=VERIFIER_VERSION,
             verified_at=self._clock.now(),
+            residual=ResidualCounts.from_hits(hits),
         )
         logger.info(
             "verification outcome=%s codes=%s",
@@ -187,8 +200,9 @@ class VerificationService:
 
     def _rerun(
         self, document: ExtractedDocument, redacted: frozenset[EntityType]
-    ) -> tuple[int, int]:
-        certain = uncertain = 0
+    ) -> tuple[list[tuple[EntityType, int | None]], int]:
+        certain: list[tuple[EntityType, int | None]] = []
+        uncertain = 0
         for match in self._detector.detect(document).matches:
             if match.entity_type not in redacted or match.confidence < DISCARD_THRESHOLD:
                 continue
@@ -196,7 +210,7 @@ class VerificationService:
             if part is None or _is_label_only(part.text[match.start : match.end]):
                 continue
             if match.confidence >= REDACT_THRESHOLD:
-                certain += 1
+                certain.append((match.entity_type, match.page_number))
             else:
                 uncertain += 1
         return certain, uncertain
@@ -230,24 +244,37 @@ def value_pattern(entity_type: EntityType, value: str) -> re.Pattern[str] | None
     return re.compile(rf"(?<![a-z0-9]){body}(?![a-z0-9])")
 
 
-def _values_remain(
+def without_kept_urls(folded: str) -> str:
+    """Blank personal-profile URLs so a name that exists only as a slug is not a leak."""
+    return _KEPT_URL_RE.sub(lambda match: " " * len(match.group(0)), folded)
+
+
+def _haystack(entity_type: EntityType, folded: str) -> str:
+    if entity_type in _NAME_TYPES:
+        return without_kept_urls(folded)
+    return folded
+
+
+def _add_hit(
+    hits: dict[EntityType, tuple[int, set[int]]], entity_type: EntityType, page: int | None
+) -> None:
+    count, pages = hits.get(entity_type, (0, set()))
+    if page is not None:
+        pages = set(pages)
+        pages.add(page)
+    hits[entity_type] = (count + 1, pages)
+
+
+def _record_value_residuals(
     source: ExtractedDocument,
     detection: DetectionOutcome,
     redacted: frozenset[EntityType],
     output: ExtractedDocument,
     raw: tuple[str, ...],
+    hits: dict[EntityType, tuple[int, set[int]]],
 ) -> bool:
-    text = fold("\n".join(part.text for part in output.parts))
+    found = False
     folded_raw = tuple(fold(item) for item in raw)
-    for pattern in _source_patterns(source, detection, redacted):
-        if pattern.search(text) or any(pattern.search(item) for item in folded_raw):
-            return True
-    return False
-
-
-def _source_patterns(
-    source: ExtractedDocument, detection: DetectionOutcome, redacted: frozenset[EntityType]
-) -> Iterator[re.Pattern[str]]:
     for match in detection.matches:
         if match.entity_type not in redacted:
             continue
@@ -255,26 +282,56 @@ def _source_patterns(
         if part is None or match.end > len(part.text):
             raise InvariantError("a detection match is outside its source part")
         pattern = value_pattern(match.entity_type, part.text[match.start : match.end])
-        if pattern is not None:
-            yield pattern
+        if pattern is None:
+            continue
+        matched_page = False
+        for out_part in output.parts:
+            if pattern.search(_haystack(match.entity_type, fold(out_part.text))):
+                _add_hit(hits, match.entity_type, out_part.page_number)
+                found = True
+                matched_page = True
+        if not matched_page and any(
+            pattern.search(_haystack(match.entity_type, item)) for item in folded_raw
+        ):
+            _add_hit(hits, match.entity_type, None)
+            found = True
+    return found
 
 
-def _words_remain_in_boxes(
-    detection: DetectionOutcome, redacted: frozenset[EntityType], output: ExtractedDocument
+def _record_box_residuals(
+    detection: DetectionOutcome,
+    redacted: frozenset[EntityType],
+    output: ExtractedDocument,
+    hits: dict[EntityType, tuple[int, set[int]]],
 ) -> bool:
+    found = False
     for finding in detection.findings:
         location = finding.location
         if finding.entity_type not in redacted or not isinstance(location, PdfLocation):
             continue
         part = _part(output, location.page_number, None)
         if part is None:
-            return True
+            _add_hit(hits, finding.entity_type, location.page_number)
+            found = True
+            continue
         for span in part.spans:
             if any(_centre_inside(word, location.boxes) for word in span.boxes) and not (
                 _is_label_only(part.text[span.start : span.end])
             ):
-                return True
-    return False
+                _add_hit(hits, finding.entity_type, location.page_number)
+                found = True
+                break
+    return found
+
+
+def _record_docx_residuals(
+    detection: DetectionOutcome,
+    redacted: frozenset[EntityType],
+    hits: dict[EntityType, tuple[int, set[int]]],
+) -> None:
+    for finding in detection.findings:
+        if finding.entity_type in redacted:
+            _add_hit(hits, finding.entity_type, None)
 
 
 def _docx_text_differs(

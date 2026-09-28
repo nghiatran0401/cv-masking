@@ -29,7 +29,6 @@ logger = logging.getLogger("cv_masking.exports")
 
 REPORT_NAME: Final = "report.csv"
 _ZIP_EPOCH: Final = (1980, 1, 1, 0, 0, 0)
-_DOWNLOADABLE: Final = frozenset({DocumentState.COMPLETED, DocumentState.REVIEW_REQUIRED})
 _ZIPPED: Final = frozenset({DocumentState.COMPLETED})
 
 
@@ -50,9 +49,9 @@ class ExportService:
         self._work = work
 
     def open_download(self, batch_id: BatchId, document_id: DocumentId) -> tuple[DocumentJob, str]:
-        """The job and the safe download name. HR may inspect a review-held output (D-34)."""
+        """The job and the safe download name. Residual failures are inspect-only (D-46)."""
         job = self._require_in_batch(batch_id, document_id)
-        if job.state not in _DOWNLOADABLE or job.output_ref is None or job.document_format is None:
+        if not job.has_downloadable_output or job.document_format is None:
             raise InvalidTransitionError("download", job.state, "document has no masked output")
         return job, download_filename(job.document_id, job.document_format)
 

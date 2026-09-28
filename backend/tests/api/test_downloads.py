@@ -69,6 +69,49 @@ def test_a_document_without_output_cannot_be_downloaded(
     assert response.json() == {"code": ErrorCode.INTERNAL_ERROR.value}
 
 
+def test_a_residual_failure_keeps_the_masked_file_for_inspection(
+    client: TestClient,
+    service: JobService,
+    input_store: LocalInputStore,
+    output_store: LocalOutputStore,
+) -> None:
+    batch = service.create_batch()
+    job = verifying_document(service, input_store, output_store, batch.batch_id)
+    failed = verified(
+        service,
+        job,
+        VerificationOutcome.FAILED,
+        frozenset({ErrorCode.VERIFY_RESIDUAL_DETECTION}),
+    )
+    view = client.get(f"/api/batches/{failed.batch_id}").json()["documents"][0]
+    assert view["state"] == DocumentState.FAILED.value
+    assert view["has_output"] is True
+    response = client.get(f"/api/batches/{failed.batch_id}/documents/{failed.document_id}/download")
+    assert response.status_code == 200
+    assert response.content == SYNTHETIC_OUTPUT
+
+
+def test_an_invalid_output_is_not_downloadable(
+    client: TestClient,
+    service: JobService,
+    input_store: LocalInputStore,
+    output_store: LocalOutputStore,
+) -> None:
+    batch = service.create_batch()
+    job = verifying_document(service, input_store, output_store, batch.batch_id)
+    failed = verified(
+        service,
+        job,
+        VerificationOutcome.FAILED,
+        frozenset({ErrorCode.VERIFY_OUTPUT_INVALID}),
+    )
+    view = client.get(f"/api/batches/{failed.batch_id}").json()["documents"][0]
+    assert view["has_output"] is False
+    response = client.get(f"/api/batches/{failed.batch_id}/documents/{failed.document_id}/download")
+    assert response.status_code == 409
+    assert response.json() == {"code": ErrorCode.INTERNAL_ERROR.value}
+
+
 def test_export_zip_holds_only_completed_outputs_and_the_csv(
     client: TestClient,
     service: JobService,
@@ -97,6 +140,20 @@ def test_export_zip_holds_only_completed_outputs_and_the_csv(
         content=b"%PDF-synthetic review input\n",
     )
     verified(service, held, VerificationOutcome.PASSED)
+    leak = verifying_document(
+        service,
+        input_store,
+        output_store,
+        done.batch_id,
+        output=b"%PDF-synthetic residual output\n",
+        content=b"%PDF-synthetic residual input\n",
+    )
+    residual = verified(
+        service,
+        leak,
+        VerificationOutcome.FAILED,
+        frozenset({ErrorCode.VERIFY_RESIDUAL_DETECTION}),
+    )
 
     response = client.get(f"/api/batches/{done.batch_id}/export")
     assert response.status_code == 200
@@ -108,8 +165,8 @@ def test_export_zip_holds_only_completed_outputs_and_the_csv(
     completed_name = download_filename(done.document_id, DocumentFormat.PDF)
     assert names == {"report.csv", completed_name}
     assert archive.read(completed_name) == SYNTHETIC_OUTPUT
-    leaked = [name for name in names if "input" in name or "work" in name or "Nguyen" in name]
-    assert leaked == []
+    stray = [name for name in names if "input" in name or "work" in name or "Nguyen" in name]
+    assert stray == []
     text = archive.read("report.csv").decode("utf-8")
     rows = list(csv.DictReader(io.StringIO(text)))
     by_id = {row["document_id"]: row for row in rows}
@@ -118,6 +175,8 @@ def test_export_zip_holds_only_completed_outputs_and_the_csv(
     assert by_id[str(queued.document_id)]["status"] == DocumentState.QUEUED.value
     assert by_id[str(queued.document_id)][f"hidden_{HiddenContentCategory.COMMENTS.value}"] == "2"
     assert by_id[str(held.document_id)]["status"] == DocumentState.REVIEW_REQUIRED.value
+    assert by_id[str(residual.document_id)]["status"] == DocumentState.FAILED.value
+    assert download_filename(residual.document_id, DocumentFormat.PDF) not in names
     assert "filename" not in text
     assert "Nguyen" not in text
     assert list((root.path / "work").iterdir()) == []

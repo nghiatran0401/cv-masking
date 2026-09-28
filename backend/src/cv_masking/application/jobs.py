@@ -15,9 +15,9 @@ from typing import Final
 from uuid import UUID, uuid4
 
 from cv_masking.domain.batch import Batch, BatchState
-from cv_masking.domain.codes import ErrorCode
+from cv_masking.domain.codes import INSPECTABLE_FAILURE_CODES, ErrorCode
 from cv_masking.domain.document_job import TERMINAL_STATES, DocumentJob, DocumentState
-from cv_masking.domain.errors import InvariantError
+from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef
 from cv_masking.ports.clock import Clock
@@ -36,10 +36,6 @@ ORPHAN_GRACE: Final = timedelta(hours=1)
 """A stored file with no metadata row is kept this long: its upload may still be recording."""
 
 type Transition = Callable[[DocumentJob, datetime], DocumentJob]
-
-_OUTPUT_DISCARDED_STATES: Final = frozenset(
-    {DocumentState.FAILED, DocumentState.REJECTED, DocumentState.CANCELLED}
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +137,45 @@ class JobService:
             tx.update_batch(grown, expected_version=batch.version)
             tx.add_document(job)
         logger.info("document %s added to batch %s", job.document_id, batch_id)
+        return job
+
+    def replace_failed_with_upload(
+        self, failed_id: DocumentId, stored: StoredObject
+    ) -> DocumentJob:
+        """Swap a FAILED row for a fresh upload (new ids) and reopen a finished batch."""
+        if not isinstance(stored, StoredObject):
+            raise InvariantError("replace_failed_with_upload needs a StoredObject")
+        with self._metadata.read() as reader:
+            old = reader.get_document(failed_id)
+            if old.state is not DocumentState.FAILED:
+                raise InvalidTransitionError("replace_failed", old.state)
+        deleted = self._delete_files(self._files_of((old,)))
+        with self._metadata.transaction() as tx:
+            current = tx.get_document(failed_id)
+            if current.state is not DocumentState.FAILED:
+                raise InvalidTransitionError("replace_failed", current.state)
+            batch = tx.get_batch(current.batch_id)
+            retried = batch.record_retry(self._now(batch.updated_at))
+            at = retried.updated_at
+            job = DocumentJob.create(DocumentId(self._new_uuid()), current.batch_id, at)
+            job = job.mark_uploaded(
+                document_format=stored.document_format,
+                input_ref=stored.ref,
+                content_sha256=stored.sha256,
+                size_bytes=stored.size_bytes,
+                at=at,
+            )
+            tx.delete_document(failed_id)
+            tx.add_document(job)
+            tx.update_batch(retried, expected_version=batch.version)
+        self._delete_files_quietly([f for f in self._files_of((current,)) if f.ref not in deleted])
+        self._metadata.compact()
+        logger.info(
+            "document %s replaced failed %s in batch %s",
+            job.document_id,
+            failed_id,
+            job.batch_id,
+        )
         return job
 
     def remove_document(self, document_id: DocumentId) -> None:
@@ -320,7 +355,7 @@ class JobService:
         if before.input_ref is not None and after.state in TERMINAL_STATES:
             released.append(_File(self._inputs, before.input_ref, fmt))
         if before.output_ref is not None and (
-            after.output_ref != before.output_ref or after.state in _OUTPUT_DISCARDED_STATES
+            after.output_ref != before.output_ref or _output_discarded(after)
         ):
             released.append(_File(self._outputs, before.output_ref, fmt))
         return released
@@ -351,3 +386,11 @@ class JobService:
                 file.store.delete(file.ref, file.document_format)
             except StorageError as error:
                 logger.warning("file deletion deferred to reconcile code=%s", error.code)
+
+
+def _output_discarded(job: DocumentJob) -> bool:
+    if job.state in {DocumentState.REJECTED, DocumentState.CANCELLED}:
+        return True
+    if job.state is DocumentState.FAILED:
+        return job.error_code not in INSPECTABLE_FAILURE_CODES
+    return False

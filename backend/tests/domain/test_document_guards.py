@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from domain_builders import (
     BLOCKING_REASON,
+    completed,
     created,
     findings_review,
     later,
@@ -80,6 +81,22 @@ def test_hidden_content_cannot_precede_validation() -> None:
         rebuild(uploaded(DOCX), hidden_removed=hidden)
     with pytest.raises(InvariantError):
         rebuild(validation_review(DOCX), hidden_removed=hidden)
+
+
+def test_only_completed_and_held_outputs_are_downloadable() -> None:
+    assert completed().has_downloadable_output
+    assert findings_review().has_downloadable_output
+    assert not verifying().has_downloadable_output
+    job = verifying()
+    failed = job.record_verification(
+        verification_for(
+            job, VerificationOutcome.FAILED, frozenset({ErrorCode.VERIFY_RESIDUAL_DETECTION})
+        ),
+        later(job),
+    )
+    assert failed.output_ref is not None
+    assert failed.has_downloadable_output
+    assert not validation_review().has_downloadable_output
 
 
 def test_approving_findings_completes_the_verified_output() -> None:

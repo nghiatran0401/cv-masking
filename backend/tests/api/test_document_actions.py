@@ -154,6 +154,8 @@ def test_the_document_view_holds_codes_and_counts_only(
         "can_approve",
         "has_output",
         "finding_counts",
+        "residual_counts",
+        "residual_pages",
         "hidden_removed",
         "version",
     }

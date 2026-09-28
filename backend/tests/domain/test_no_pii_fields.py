@@ -21,7 +21,7 @@ from cv_masking.domain.findings import (
 )
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import EntityType, MaskingPolicy
-from cv_masking.domain.verification import VerificationResult
+from cv_masking.domain.verification import ResidualCounts, VerificationResult
 
 EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
     BatchId: ("value",),
@@ -45,6 +45,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
     RedactionRegion: ("page_number", "boxes", "entity_type", "finding_ids"),
     DocxRedactionRange: ("part_name", "start", "end", "entity_type", "finding_ids"),
     FindingCounts: ("items",),
+    ResidualCounts: ("items",),
     MaskingPolicy: ("mask_salary", "version"),
     VerificationResult: (
         "outcome",
@@ -53,6 +54,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "verifier_id",
         "verifier_version",
         "verified_at",
+        "residual",
     ),
     Batch: (
         "batch_id",

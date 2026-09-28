@@ -14,7 +14,8 @@ _WHITESPACE: Final = b"\x00\t\n\x0c\r "
 _DELIMITERS: Final = b"()<>[]{}/%"
 _TEXT_SHOW: Final = frozenset({b"Tj", b"TJ"})
 _PATH_PAINT: Final = frozenset({b"S", b"s", b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"})
-_OPERAND_WORDS: Final = frozenset({b"true", b"false", b"null"})
+_OPERAND_WORDS: Final = frozenset({b"true", b"false", b"null", b"R"})
+"""``R`` is the indirect-reference keyword inside dictionaries, not a painting operator."""
 _MAX_STRING_DEPTH: Final = 64
 
 
@@ -34,26 +35,40 @@ type NamePredicate = Callable[[bytes], bool]
 
 
 def strip_hidden(
-    data: bytes, *, hidden_property: NamePredicate, hidden_xobject: NamePredicate
+    data: bytes,
+    *,
+    hidden_property: NamePredicate,
+    hidden_xobject: NamePredicate,
+    hidden_inline: NamePredicate | None = None,
 ) -> tuple[bytes, int]:
     """Return the filtered stream and the number of painting operations removed.
 
     ``hidden_property`` answers for ``/OC /<name> BDC`` names, ``hidden_xobject``
-    for ``/<name> Do`` names (an XObject whose own ``/OC`` is hidden).
+    for ``/<name> Do`` names (an XObject whose own ``/OC`` is hidden),
+    ``hidden_inline`` for ``/OC <<...>> BDC`` dictionaries. Every ``/OC`` BDC/EMC
+    pair is unwrapped so dropping ``OCProperties`` cannot change remaining
+    painting.
     """
     cuts: list[tuple[int, int, bytes]] = []
-    stack: list[bool] = []
+    stack: list[tuple[bool, bool]] = []
+    inline = hidden_inline or _reject_inline
     for operands, token in _operations(data):
-        hidden = bool(stack) and stack[-1]
+        hidden = bool(stack) and stack[-1][0]
         op = token.value
         if op == b"BDC":
-            stack.append(hidden or _bdc_hidden(operands, hidden_property))
+            is_oc = len(operands) >= 1 and operands[0].value == b"/OC"
+            nested_hidden = hidden or _bdc_hidden(operands, hidden_property, inline)
+            stack.append((nested_hidden, is_oc))
+            if is_oc:
+                cuts.append((_first_start(operands, token), token.end, b" "))
         elif op == b"BMC":
-            stack.append(hidden)
+            stack.append((hidden, False))
         elif op == b"EMC":
             if not stack:
                 raise ContentError("unbalanced EMC")
-            stack.pop()
+            _was_hidden, unwrap = stack.pop()
+            if unwrap:
+                cuts.append((token.start, token.end, b" "))
         elif op == b"Do":
             name = _single_name(operands)
             if hidden or hidden_xobject(name):
@@ -95,11 +110,20 @@ def _operations(data: bytes) -> Iterator[tuple[list[_Token], _Token]]:
         raise ContentError("trailing operands")
 
 
-def _bdc_hidden(operands: list[_Token], hidden_property: NamePredicate) -> bool:
+def _reject_inline(_raw: bytes) -> bool:
+    raise ContentError("inline optional-content dictionary")
+
+
+def _bdc_hidden(
+    operands: list[_Token], hidden_property: NamePredicate, hidden_inline: NamePredicate
+) -> bool:
     if len(operands) != 2 or not operands[0].value.startswith(b"/"):
         raise ContentError("BDC needs a tag and properties")
     if operands[0].value != b"/OC":
         return False
+    raw = operands[1].value
+    if raw.startswith(b"<<"):
+        return hidden_inline(raw)
     return hidden_property(_name_of(operands[1]))
 
 

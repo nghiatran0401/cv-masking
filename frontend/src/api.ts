@@ -205,16 +205,39 @@ function filenameFrom(response: Response): string | null {
   return null;
 }
 
-export async function downloadFile(url: string): Promise<void> {
+export type MaskedBlob = {
+  blob: Blob;
+  filename: string | null;
+};
+
+export async function fetchMaskedFile(url: string): Promise<MaskedBlob> {
   const response = await request(url);
-  const blob = await response.blob();
-  const name = filenameFrom(response);
+  return {
+    blob: await response.blob(),
+    filename: filenameFrom(response),
+  };
+}
+
+export function isPdfBlob(blob: Blob): boolean {
+  const type = blob.type.split(";")[0]?.trim().toLowerCase() ?? "";
+  return type === "application/pdf";
+}
+
+export async function downloadFile(
+  url: string,
+  filename?: string,
+): Promise<void> {
+  const fetched = await fetchMaskedFile(url);
+  saveBlob(fetched.blob, filename ?? fetched.filename);
+}
+
+export function saveBlob(blob: Blob, filename: string | null): void {
   const objectUrl = URL.createObjectURL(blob);
   try {
     const link = document.createElement("a");
     link.href = objectUrl;
-    if (name !== null) {
-      link.download = name;
+    if (filename !== null) {
+      link.download = filename;
     }
     link.click();
   } finally {
@@ -226,12 +249,15 @@ export function uploadDocument(
   batchId: string,
   file: File,
   onProgress: (percent: number) => void,
+  replaces?: string,
 ): Promise<DocumentView> {
   return new Promise((resolve, reject) => {
     const body = new FormData();
     body.append("file", file);
+    const query =
+      replaces === undefined ? "" : `?replaces=${encodeURIComponent(replaces)}`;
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/batches/${batchId}/documents`);
+    xhr.open("POST", `/api/batches/${batchId}/documents${query}`);
     xhr.withCredentials = true;
     if (csrfToken !== null) {
       xhr.setRequestHeader(CSRF_HEADER, csrfToken);

@@ -19,7 +19,7 @@ from cv_masking.adapters.local_storage.root import FILE_MODE, StorageRoot, requi
 from cv_masking.adapters.sqlite import rows
 from cv_masking.adapters.sqlite.migrations import migrate
 from cv_masking.domain.batch import Batch
-from cv_masking.domain.codes import ErrorCode
+from cv_masking.domain.codes import INSPECTABLE_FAILURE_CODES, ErrorCode
 from cv_masking.domain.document_job import TERMINAL_STATES, DocumentJob, DocumentState
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.ids import BatchId, DocumentId
@@ -45,9 +45,6 @@ _PRAGMAS: Final = (
     "PRAGMA trusted_schema = OFF",
     "PRAGMA synchronous = FULL",
     "PRAGMA cell_size_check = ON",
-)
-_UNNEEDED_OUTPUT_STATES: Final = frozenset(
-    {DocumentState.FAILED, DocumentState.REJECTED, DocumentState.CANCELLED}
 )
 
 _BATCH_SELECT: Final = f"SELECT {', '.join(rows.BATCH_COLUMNS)} FROM batches"  # noqa: S608
@@ -134,15 +131,16 @@ class _Reader:
 
     def output_uses(self) -> tuple[ObjectUse, ...]:
         found = self._conn.execute(
-            "SELECT output_ref, document_format, state FROM documents WHERE output_ref IS NOT NULL"
+            "SELECT output_ref, document_format, state, error_code "
+            "FROM documents WHERE output_ref IS NOT NULL"
         ).fetchall()
         return tuple(
             ObjectUse(
                 rows.object_ref(ref),
                 rows.document_format(fmt),
-                needed=rows.document_state(state) not in _UNNEEDED_OUTPUT_STATES,
+                needed=_output_needed(rows.document_state(state), error_code),
             )
-            for ref, fmt, state in found
+            for ref, fmt, state, error_code in found
         )
 
     def _document(self, row: rows.Row) -> DocumentJob:
@@ -159,7 +157,15 @@ class _Reader:
         hidden = self._children(
             "SELECT category, count FROM document_hidden_content WHERE document_id = ?", key
         )
-        return rows.document_from_rows(row, counts, reasons, failures, hidden)
+        residual = self._children(
+            "SELECT entity_type, count FROM document_residual_counts WHERE document_id = ?", key
+        )
+        residual_pages = self._children(
+            "SELECT entity_type, page FROM document_residual_pages WHERE document_id = ?", key
+        )
+        return rows.document_from_rows(
+            row, counts, reasons, failures, hidden, residual, residual_pages
+        )
 
     def _children(self, sql: str, key: tuple[object, ...]) -> list[rows.Row]:
         return [rows.as_row(row) for row in self._conn.execute(sql, key).fetchall()]
@@ -216,6 +222,8 @@ class _Transaction(_Reader):
             "document_review_reasons",
             "document_verification_failures",
             "document_hidden_content",
+            "document_residual_counts",
+            "document_residual_pages",
         ):
             self._conn.execute(
                 f"DELETE FROM {table} WHERE document_id = ?",  # noqa: S608 - fixed table names
@@ -247,6 +255,15 @@ class _Transaction(_Reader):
         self._conn.executemany(
             "INSERT INTO document_hidden_content (document_id, category, count) VALUES (?, ?, ?)",
             rows.hidden_content_params(job),
+        )
+        self._conn.executemany(
+            "INSERT INTO document_residual_counts (document_id, entity_type, count) "
+            "VALUES (?, ?, ?)",
+            rows.residual_count_params(job),
+        )
+        self._conn.executemany(
+            "INSERT INTO document_residual_pages (document_id, entity_type, page) VALUES (?, ?, ?)",
+            rows.residual_page_params(job),
         )
 
     def _raise_missing_or_conflict(
@@ -397,3 +414,16 @@ class SqliteMetadataStore:
                     require_owned_file(fd)
                 finally:
                     os.close(fd)
+
+
+def _output_needed(state: DocumentState, error_code: object) -> bool:
+    if state in {DocumentState.REJECTED, DocumentState.CANCELLED}:
+        return False
+        if state is DocumentState.FAILED:
+            if not isinstance(error_code, str):
+                return False
+            try:
+                return ErrorCode(error_code) in INSPECTABLE_FAILURE_CODES
+            except ValueError:
+                return False
+    return True

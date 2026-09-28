@@ -119,7 +119,7 @@ flowchart LR
 | T-02 | Spoofing | DNS rebinding: malicious site resolves its name to 127.0.0.1 and calls the API. | Strict Host allowlist (`127.0.0.1:<port>`); Origin check. | 14 |
 | T-03 | Spoofing / Tampering | Cross-site request forgery from another tab (upload, delete, approve). | Startup token + CSRF token; SameSite; reject missing/foreign Origin. | 14 |
 | T-04 | Info disclosure | PII in logs, exceptions, SQLite, API status, CSV, test snapshots. | Closed error enum; static messages; allowlisted log fields; no text columns for values; sentinel-string tests. | 2, 4, 14 |
-| T-05 | Info disclosure | Original filename (contains name) persisted or logged. | UUID paths; filename never sent beyond upload handler; kept only in browser memory. | 3, 5, 13 |
+| T-05 | Info disclosure | Original filename (contains name) persisted or logged. | UUID paths on disk; filename never stored or logged; HR downloads use `masked_<original>` from browser memory only. | 3, 5, 13 |
 | T-06 | Info disclosure | "Redaction" is only a visual overlay; text extractable underneath. | Redaction annotations + apply; verifier extracts text from output with a fresh parser. | 10, 11 |
 | T-07 | Info disclosure | PII survives in metadata, XMP, links, bookmarks, attachments, forms, comments, hidden layers, invisible text, incremental revisions. | Always-strip list + hidden-content review; full rewrite save; verifier checks each category. | 6, 10, 11 |
 | T-07a | Info disclosure | Candidate photo, or text inside an image (e.g. a pasted screenshot with contact details), passes through unmasked. | **Accepted residual risk (D-13).** Disclosed in UI, README, and reports. | 13, 16 |
@@ -130,12 +130,12 @@ flowchart LR
 | T-12 | Tampering | Path traversal or symlink escape via IDs or archive entries. | Server-generated UUIDs only; containment check; symlink refusal; ZIP built from server paths. | 3, 13, 14 |
 | T-13 | Info disclosure | Temp/work files left behind after crash. | Atomic writes; `finally` cleanup; startup + periodic sweeper (1 h for leftovers). | 3, 12 |
 | T-14 | Info disclosure | ZIP includes inputs or work files. | ZIP built only from COMPLETED output paths; test asserts contents. | 13 |
-| T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote URLs; CSP `default-src 'self'`; build scan for URLs. | 1, 13, 15 |
+| T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote URLs; CSP `default-src 'self'`; `frame-src 'self' blob:` only so a masked PDF blob can be iframed; `object-src` stays `none`; build scan for URLs. | 1, 13, 15 |
 | T-16 | Tampering | Supply-chain compromise of a dependency. | Minimal deps; lockfiles with hashes; justification per dep; no install scripts where avoidable. | 1+ |
 | T-17 | Info disclosure | Developer pastes real CV into Cursor, or agent reads runtime data. | SECURITY.md rules; synthetic-only fixtures; `.cursorignore`; runtime root outside repo. | 0 |
 | T-18 | Repudiation | Unclear which policy/version produced an output. | Job records policy version, detector versions, software version. | 2, 4 |
 | T-19 | DoS | Batch of large files, or one file that makes a parser or detector hang, freezes the laptop or the app. | One worker process, one document at a time (D-33); the queue is the persisted states, so it holds at most the batch limits; per-document time budget (120 s) ends the process, which is replaced for the next document; CPU work never runs on the API event loop. | 12 |
-| T-20 | Info disclosure | Browser caches masked or input PDFs. | `Cache-Control: no-store`; downloads served with attachment disposition. | 14 |
+| T-20 | Info disclosure | Browser caches masked or input PDFs. | `Cache-Control: no-store`; downloads served with attachment disposition. In-app PDF preview fetches that same attachment into a `blob:` URL and revokes it when the dialog closes. | 14 |
 | T-21 | Info disclosure | HR mistakes masked output for anonymous and shares widely. | UI + README state "masked, not anonymized"; report lists residual-risk notice. | 13, 16 |
 | T-22 | Info disclosure | Hidden-content alert itself leaks content (e.g. attachment name, comment text). | Alert payload limited to category, count, page numbers or part type. | 6, 6b, 13 |
 | T-23 | DoS / Elevation | Hostile DOCX archive: zip bomb, path traversal in entry names, XML entity expansion, external entity (XXE) reading local files. | In-memory reads with entry/size/ratio limits; entry-name validation; no extraction to disk; parser with DTDs, entities, and network disabled. | 6b, 14 |
@@ -175,3 +175,9 @@ flowchart LR
     section heuristics (`family_details`, `reference_name` false negatives
     in `make eval`). Real CVs will differ; authorized measurement is
     optional and human-only (D-40).
+19. Personal URLs (LinkedIn, GitHub, portfolios, messaging handles) are not
+    masked (D-43). They can re-identify a candidate. Clickable hyperlink
+    targets are still stripped.
+20. HR download names are `masked_<original filename>`, which often contains
+    the candidate's name. Those names exist only in this browser tab and in
+    the laptop Downloads folder; they are not stored by the server.

@@ -55,6 +55,17 @@ def test_started_batch_is_locked() -> None:
     for command in commands:
         with pytest.raises(InvalidTransitionError):
             command()
+    retried = batch.record_retry(at)
+    assert retried.state is BatchState.RUNNING
+    assert retried.document_count == 2
+
+
+def test_record_retry_reopens_a_finished_batch() -> None:
+    batch = _open(1).start(T0 + timedelta(minutes=1))
+    finished = batch.finish([DocumentState.FAILED], T0 + timedelta(minutes=2))
+    retried = finished.record_retry(T0 + timedelta(minutes=3))
+    assert retried.state is BatchState.RUNNING
+    assert retried.document_count == 1
 
 
 def test_finish_needs_every_document_settled() -> None:

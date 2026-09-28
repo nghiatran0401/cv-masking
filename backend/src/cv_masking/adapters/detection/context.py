@@ -42,12 +42,16 @@ ADDRESS_CUES: Final = frozenset(
         "dist",
         "province",
         "apartment",
-        "apt",
-        "building",
-        "floor",
     }
 )
 _ABBREVIATED_CUES: Final = frozenset({"p.", "q.", "tp.", "tx.", "tt."})
+_NUMBERED_CUE_RES: Final = (
+    re.compile(r"\bbuilding\s+\d{1,4}\b", re.I),
+    re.compile(r"\bfloor\s+\d{1,3}\b", re.I),
+    re.compile(r"\b\d{1,3}(?:st|nd|rd|th)\s+floor\b", re.I),
+    re.compile(r"\bapt\.?\s+\d{1,4}\b", re.I),
+)
+_AGE_OR_YEAR_RE: Final = re.compile(r"\b\d{1,2}\s+years?\b|\b(?:19|20)\d{2}\b", re.I)
 
 
 def family_hits(view: PartView) -> list[Hit]:
@@ -95,7 +99,9 @@ def _address_segment(segment: str, absolute: int) -> Hit | None:
     tokens = _TOKEN_RE.findall(fold(segment))
     cues = {token.rstrip(".") for token in tokens if token.rstrip(".") in ADDRESS_CUES}
     cues |= {token for token in tokens if token in _ABBREVIATED_CUES}
-    has_number = any(char.isdigit() for char in segment)
+    if any(pattern.search(segment) for pattern in _NUMBERED_CUE_RES):
+        cues.add("numbered_site")
+    has_number = _has_house_number(segment)
     confidence: float
     signals: tuple[str, ...]
     if len(cues) >= 2 and has_number:
@@ -116,3 +122,8 @@ def _address_segment(segment: str, absolute: int) -> Hit | None:
         "address.contact_block",
         signals,
     )
+
+
+def _has_house_number(segment: str) -> bool:
+    """Digits that look like a street number, not '6 years' or a calendar year."""
+    return any(char.isdigit() for char in _AGE_OR_YEAR_RE.sub(" ", segment))
