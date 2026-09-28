@@ -4,7 +4,7 @@ BACKEND := backend
 FRONTEND := frontend
 UV_RUN := uv run --locked
 
-.PHONY: help install hooks guard dev dev-backend dev-frontend build fmt lint typecheck test check
+.PHONY: help install hooks guard dev dev-backend dev-frontend build eval fmt lint typecheck test check
 
 help:
 	@echo "make install    Install locked dependencies, Playwright Chromium, and the git pre-commit file guard"
@@ -15,6 +15,7 @@ help:
 	@echo "make lint       Check formatting and lint"
 	@echo "make typecheck  mypy --strict and tsc"
 	@echo "make test       pytest, vitest, and Playwright"
+	@echo "make eval       Synthetic metadata-only evaluation (never authorized / real CVs)"
 	@echo "make check      guard + lint + typecheck + build + test (quality gate)"
 
 install: hooks
@@ -59,5 +60,8 @@ test:
 	cd $(BACKEND) && $(UV_RUN) python scripts/run_pytest.py
 	cd $(FRONTEND) && npm test
 	cd $(FRONTEND) && npx playwright test
+
+eval:
+	cd $(BACKEND) && $(UV_RUN) python -m cv_masking.evaluation
 
 check: guard lint typecheck build test

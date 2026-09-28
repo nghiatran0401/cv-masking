@@ -4,10 +4,10 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 15 — FastAPI serves the built UI on loopback; an unsigned
-> macOS `.command` launcher starts one instance, waits for health, and opens
-> the browser with a one-time bootstrap token. See
-> [docs/stage-plan.md](docs/stage-plan.md) and [docs/install.md](docs/install.md).
+> **Status:** Stage 16 — evaluation harness and release-candidate docs.
+> Synthetic metadata-only metrics: `make eval`. HR launch:
+> [docs/install.md](docs/install.md), [docs/operator-guide.md](docs/operator-guide.md).
+> See [docs/stage-plan.md](docs/stage-plan.md).
 
 ## Development (macOS)
 
@@ -20,6 +20,7 @@ make install             # locked dependencies, Playwright Chromium, pre-commit 
 make build               # production UI into the Python package
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
 make check               # file guard + lint + type-check + UI build + tests (quality gate)
+make eval                # synthetic metadata-only precision/recall report (no real CVs)
 ```
 
 Open <http://127.0.0.1:5173> for development. HR double-clicks
@@ -63,4 +64,10 @@ Both servers bind to `127.0.0.1` only; the backend host cannot be changed. Set
 | [docs/error-codes.md](docs/error-codes.md) | Safe error codes and document states |
 | [docs/stage-plan.md](docs/stage-plan.md) | Implementation stages |
 | [docs/install.md](docs/install.md) | macOS install, run, uninstall (Stage 15) |
+| [docs/operator-guide.md](docs/operator-guide.md) | HR operating instructions |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Safe codes and launcher issues |
+| [docs/adr.md](docs/adr.md) | Architecture decision records |
+| [docs/demo-script.md](docs/demo-script.md) | Synthetic demo walkthrough |
+| [docs/release-checklist.md](docs/release-checklist.md) | Go/no-go checklist |
+| [docs/evaluation/](docs/evaluation/) | Synthetic eval; authorized-run procedure (D-40) |
 | [docs/stage-handoffs/](docs/stage-handoffs/) | Per-stage handoff reports |

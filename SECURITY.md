@@ -51,6 +51,9 @@ environment local.
 - Debugging a real-document problem: reproduce it with a **synthetic** fixture that has the
   same structure. If you cannot, report only the error code, document UUID, page count,
   and structural facts (e.g. "two-column, table on page 2") — never content.
+- **Never** set `CV_MASKING_AUTHORIZED_EVAL=1` or pass `--authorized` from Cursor or any
+  agent. That path is for a human on the HR laptop only
+  ([docs/evaluation/README.md](docs/evaluation/README.md)).
 
 ## 3. Test data
 

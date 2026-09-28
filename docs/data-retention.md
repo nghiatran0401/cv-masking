@@ -6,7 +6,8 @@ Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker,
 recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
 Stage 13 streams individual downloads and writes the ZIP export in a work directory
 that is deleted when the response finishes. Stage 14 writes metadata-only logs under
-`data/logs/`. Stage 15 adds `data/lock/` for the desktop instance lock. Uninstall is
+`data/logs/`. Stage 15 adds `data/lock/` for the desktop instance lock. Stage 16
+evaluation runs in process and does not write under `data/`. Uninstall is
 documented in [install.md](install.md).
 
 ## 1. Privacy assumptions
@@ -131,6 +132,7 @@ by file permissions (A-2, A-3).
 | Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
 | ZIP export | Temporary `export.zip` in `data/work/<uuid>/` | Deleted when the download response finishes (the work directory is closed in a background task). If the process dies first, the sweeper removes the work directory after 1 h. There is no `data/exports` directory. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
+| Evaluation JSON/Markdown (counts only) | stdout of `make eval`; not stored by the app | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | `data/logs/app.log` (10 MiB, 7 backups) | Rotated; leftover files stay until HR deletes `data/`. |
 | Original filenames (display only) | Browser tab memory | Tab closed or reloaded. |

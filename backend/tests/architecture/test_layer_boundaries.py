@@ -57,6 +57,20 @@ def test_detection_adapter_does_not_import_format_adapters() -> None:
             )
 
 
+def test_evaluation_does_not_import_api_sqlite_or_local_storage() -> None:
+    """Stage 16 harness is in-process; it must not open the job DB or data/ stores."""
+    for path in _sources("evaluation"):
+        for module in _imports(path):
+            assert not module.startswith(
+                (
+                    "cv_masking.api",
+                    "cv_masking.adapters.sqlite",
+                    "cv_masking.adapters.local_storage",
+                )
+            ), (path.name, module)
+            assert module != "sqlite3"
+
+
 def test_only_the_sqlite_adapter_imports_sqlite() -> None:
     for path in SRC.rglob("*.py"):
         if "sqlite3" in _imports(path):

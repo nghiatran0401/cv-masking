@@ -1,10 +1,12 @@
 # Threat model
 
-Status: Stage 15 controls (built UI served from FastAPI, unsigned `.command`
-launcher, one-time bootstrap token). PyMuPDF AGPL remains a residual until
-legal confirms. Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
+Status: Stage 16 (evaluation harness is in-process, synthetic, metadata-only;
+authorized real-CV run is optional, human-only, D-40). Stage 15 controls
+(built UI served from FastAPI, unsigned `.command` launcher, one-time
+bootstrap token) remain. PyMuPDF AGPL remains a residual until legal
+confirms. Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
 [docs/masking-policy.md](docs/masking-policy.md), [docs/supported-pdf.md](docs/supported-pdf.md),
-[docs/install.md](docs/install.md).
+[docs/install.md](docs/install.md), [docs/evaluation/README.md](docs/evaluation/README.md).
 
 ## 1. System summary
 
@@ -28,6 +30,7 @@ makes network calls beyond loopback.
 | AS-6 | Original filenames | High — often contain the candidate's name |
 | AS-7 | Session/bootstrap token (Stage 14/15) | Medium — grants local API access |
 | AS-8 | Source code, fixtures, dependency lockfiles | Integrity-critical |
+| AS-9 | Evaluation report (JSON/Markdown) | Low if metadata-only; High if values or paths leak |
 
 ## 3. Actors
 
@@ -170,3 +173,7 @@ flowchart LR
 17. The first browser URL contains a one-time bootstrap token. Referrer is `no-referrer`;
     the page strips the query. Browser history may still keep that first URL until the
     token is consumed.
+18. Detector recall on this synthetic PDF set is not 100% for Stage 8
+    section heuristics (`family_details`, `reference_name` false negatives
+    in `make eval`). Real CVs will differ; authorized measurement is
+    optional and human-only (D-40).

@@ -40,6 +40,8 @@ laptop and produces permanently redacted copies.
 - Output file naming: `redacted-<uuid>.pdf` for PDF input, `redacted-<uuid>.docx` for DOCX
   input. Original filenames are held in browser memory only.
 - Local retention and cleanup per [data-retention.md](data-retention.md).
+- Release-candidate evidence: synthetic evaluation harness and operator docs
+  (Stage 16). No new masking features in that stage.
 
 ## 4. Non-goals
 

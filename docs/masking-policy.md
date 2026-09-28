@@ -120,8 +120,8 @@ Synthetic example people used in docs and fixtures: **Nguyễn Văn Mẫu**,
 | 0.50 – 0.85 | Redact **and** `requires_review` | Redact and `requires_review` |
 | < 0.50 | Discard, count as `suppressed_low_confidence` in metadata | Discard |
 
-- Thresholds are initial values, to be calibrated only from annotated synthetic
-  evaluation in Stage 16. Changing them is a policy change requiring approval.
+- Thresholds are initial values. Stage 16 measured synthetic recall but did **not**
+  change 0.85 / 0.50; changing them is a policy change requiring approval.
 - A document with any `requires_review` finding ends in `REVIEW_REQUIRED` even if
   verification passes. HR inspects the **masked** output (never extracted text) and approves
   (→ `COMPLETED`) or denies (→ `REJECTED`, output deleted).

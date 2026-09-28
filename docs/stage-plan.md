@@ -29,7 +29,7 @@ then handoff, then **git commit** (D-18).
 | 13 | HR interface | Complete (committed) |
 | 14 | Runtime hardening | Complete (committed) |
 | 15 | Local build and launcher | Complete (committed) |
-| 16 | Evaluation and release candidate | Not started |
+| 16 | Evaluation and release candidate | Complete (committed) |
 | — | Windows support (future, unscheduled) | Not defined |
 
 ---
@@ -294,6 +294,13 @@ Acceptance: All metrics are reproducible; failures are visible; release limitati
 Stage 0 notes: "Authorized" evaluation on real CVs, if ever approved, must run on the HR laptop with no Cursor/AI involvement and produce metadata-only output. The report must list photos/images as unmasked (D-13) and report metrics separately for PDF and DOCX.
 
 Decision D-40 (after Stage 11): the evaluation set is synthetic and kept in the repository; an authorized local run is optional and shares only the metadata report.
+
+Stage 16 notes: fixtures are generated at run time (not committed PDF/DOCX).
+`make eval` / `python -m cv_masking.evaluation` prints metadata-only JSON.
+Authorized path requires `CV_MASKING_AUTHORIZED_EVAL=1` and is documented so
+Cursor/agents never run it on real CVs. Intel remains untested. No product
+features were added. See [evaluation/README.md](evaluation/README.md) and
+[stage-handoffs/stage-16.md](stage-handoffs/stage-16.md).
 
 ## Future stage — Windows support (unscheduled)
 

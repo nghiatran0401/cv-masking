@@ -26,7 +26,9 @@ A second double-click does not start another server. If the app is already
 healthy it only opens the browser on `http://127.0.0.1:8765/` (the existing
 session cookie is enough).
 
-HR does **not** need Node.js at runtime.
+HR does **not** need Node.js at runtime. Day-to-day use:
+[operator-guide.md](operator-guide.md). Problems:
+[troubleshooting.md](troubleshooting.md).
 
 ## What IT installs (this laptop / a prebuilt tree)
 
