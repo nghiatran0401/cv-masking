@@ -205,7 +205,7 @@ Acceptance: Only verification PASSED may transition to COMPLETED; residual data 
 
 Stage 0 notes: Verifier also checks links and every hidden-content category. It does not inspect image content (D-13).
 
-Stage 11 notes: the verifier reruns only the deterministic Stage 7 rules; the Stage 8 name heuristics depend on layout that redaction changes, so names are caught by the source-value search and the position check instead. Only distinctive source values are searched (see the handoff). The verification service is format-neutral; Stage 11b adds a DOCX inspector. See [stage-handoffs/stage-11.md](stage-handoffs/stage-11.md).
+Stage 11 notes: the verifier reruns only the deterministic Stage 7 rules; the Stage 8 name heuristics depend on layout that redaction changes, so names are caught by the source-value search and the position check instead. Only distinctive source values are searched (see the handoff). Confirmed as D-37; Stage 11b follows the same rules. The verification service is format-neutral; Stage 11b adds a DOCX inspector. See [stage-handoffs/stage-11.md](stage-handoffs/stage-11.md).
 
 ## Stage 11b — DOCX verification
 Goal: Prevent unverified DOCX outputs from being released.
@@ -246,6 +246,8 @@ Acceptance: UI handles partial failures; mandatory policies cannot be disabled; 
 
 Stage 0 notes: Accepts PDF and DOCX; downloads keep the input's format; the ZIP may contain both. Shows what hidden content was removed (kind/count/page or part) as information only (D-32), and a review-required keep/delete choice (D-34). Vietnamese and English UI strings (D-03). "Masked, not anonymized" notice. Playwright browser binaries are a dev-time download.
 
+Decision D-38 (after Stage 11): downloads are `redacted-<uuid>.<ext>`; original names are shown from browser memory only; the ZIP report is one metadata-only CSV (document id, status, error code, per-type counts, hidden-content kinds/counts).
+
 ## Stage 14 — Runtime hardening
 Goal: Protect the local service from network and browser abuse.
 
@@ -268,6 +270,8 @@ Acceptance: HR runs one launcher; no Node development server is required; shutdo
 
 Stage 0 notes: macOS only; Windows is the future stage below (D-08).
 
+Decision D-39 (after Stage 11): a `.command` launcher with a bundled Python environment, installed once by IT, unsigned. Blocked on the tech lead confirming the PyMuPDF AGPL-3.0 licence with bank legal/IT.
+
 ## Stage 16 — Evaluation and release candidate
 Goal: Establish evidence for the presentation and decision to continue.
 
@@ -278,6 +282,8 @@ Execute Stage 16 only. Create a synthetic/authorized evaluation harness and rele
 Acceptance: All metrics are reproducible; failures are visible; release limitations are explicit; no test or report contains real candidate data.
 
 Stage 0 notes: "Authorized" evaluation on real CVs, if ever approved, must run on the HR laptop with no Cursor/AI involvement and produce metadata-only output. The report must list photos/images as unmasked (D-13) and report metrics separately for PDF and DOCX.
+
+Decision D-40 (after Stage 11): the evaluation set is synthetic and kept in the repository; an authorized local run is optional and shares only the metadata report.
 
 ## Future stage — Windows support (unscheduled)
 
