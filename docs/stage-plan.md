@@ -26,7 +26,7 @@ then handoff, then **git commit** (D-18).
 | 11 | Independent verification | Complete (committed) |
 | 11b | DOCX verification | Complete (committed) |
 | 12 | Local job queue | Complete (committed) |
-| 13 | HR interface | Not started |
+| 13 | HR interface | Complete (committed) |
 | 14 | Runtime hardening | Not started |
 | 15 | Local build and launcher | Not started |
 | 16 | Evaluation and release candidate | Not started |
@@ -251,6 +251,8 @@ Acceptance: UI handles partial failures; mandatory policies cannot be disabled; 
 Stage 0 notes: Accepts PDF and DOCX; downloads keep the input's format; the ZIP may contain both. Shows what hidden content was removed (kind/count/page or part) as information only (D-32), and a review-required keep/delete choice (D-34). Vietnamese and English UI strings (D-03). "Masked, not anonymized" notice. Playwright browser binaries are a dev-time download.
 
 Decision D-38 (after Stage 11): downloads are `redacted-<uuid>.<ext>`; original names are shown from browser memory only; the ZIP report is one metadata-only CSV (document id, status, error code, per-type counts, hidden-content kinds/counts).
+
+Stage 13 notes: the UI polls every 1.5 s while a batch is running or a document is in flight. Filenames live in React state; language is the only `sessionStorage` key. Individual downloads are available for `COMPLETED` and review-held outputs; the ZIP includes `COMPLETED` files only. Retry after the batch has started requires a new batch (D-33). Playwright Chromium is a `make install` download because npm install scripts are disabled. See [stage-handoffs/stage-13.md](stage-handoffs/stage-13.md).
 
 ## Stage 14 — Runtime hardening
 Goal: Protect the local service from network and browser abuse.

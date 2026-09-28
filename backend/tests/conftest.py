@@ -16,7 +16,7 @@ from cv_masking.adapters.local_storage import (
 from cv_masking.adapters.sqlite import SqliteMetadataStore
 from cv_masking.api.app import create_app
 from cv_masking.api.runtime import Runtime, limits_from_settings
-from cv_masking.application import JobService, UploadService
+from cv_masking.application import ExportService, JobService, UploadService
 from cv_masking.config import Settings
 
 
@@ -103,8 +103,16 @@ def uploads(
 
 
 @pytest.fixture
-def runtime(service: JobService, uploads: UploadService, settings: Settings) -> Runtime:
-    return Runtime(service, uploads, settings)
+def runtime(
+    service: JobService,
+    uploads: UploadService,
+    settings: Settings,
+    output_store: LocalOutputStore,
+    work_area: LocalWorkArea,
+) -> Runtime:
+    return Runtime(
+        service, uploads, settings, exports=ExportService(service, output_store, work_area)
+    )
 
 
 @pytest.fixture

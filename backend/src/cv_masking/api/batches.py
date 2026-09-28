@@ -1,16 +1,22 @@
 from collections.abc import Iterator
-from typing import Annotated
+from contextlib import AbstractContextManager
+from pathlib import Path
+from typing import Annotated, assert_never
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.background import BackgroundTask
 
 from cv_masking.api.errors import ApiError
 from cv_masking.api.runtime import Runtime
+from cv_masking.application import ExportService, zip_filename
 from cv_masking.domain.batch import Batch
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.document_job import DocumentJob
 from cv_masking.domain.errors import InvariantError
+from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId
 from cv_masking.domain.limits import READ_CHUNK_BYTES
 
@@ -57,6 +63,7 @@ class DocumentView(BaseModel):
     error_code: str | None
     review_reasons: tuple[str, ...]
     can_approve: bool
+    has_output: bool
     finding_counts: dict[str, int] | None
     hidden_removed: dict[str, int]
     version: int
@@ -108,6 +115,7 @@ def _document_view(job: DocumentJob) -> DocumentView:
         error_code=job.error_code.value if job.error_code is not None else None,
         review_reasons=tuple(sorted(reason.value for reason in job.review_reasons)),
         can_approve=job.can_approve_review,
+        has_output=job.output_ref is not None,
         finding_counts=None
         if job.finding_counts is None
         else {entity.value: count for entity, count in job.finding_counts.items},
@@ -228,6 +236,61 @@ def deny_review(
     return _document_view(
         runtime.jobs.deny_review(job.document_id, expected_version=body.expected_version)
     )
+
+
+_NO_STORE = {"Cache-Control": "no-store"}
+
+
+def _media_type(fmt: DocumentFormat) -> str:
+    if fmt is DocumentFormat.PDF:
+        return "application/pdf"
+    if fmt is DocumentFormat.DOCX:
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert_never(fmt)
+
+
+def _exports(runtime: Runtime) -> ExportService:
+    if runtime.exports is None:
+        raise ApiError(ErrorCode.INTERNAL_ERROR, 500)
+    return runtime.exports
+
+
+@router.get("/{batch_id}/documents/{document_id}/download")
+def download_document(
+    batch_id: UUID, document_id: UUID, runtime: Annotated[Runtime, Depends(_runtime)]
+) -> StreamingResponse:
+    """A completed or review-held masked file, named redacted-<uuid>.<ext> (D-38)."""
+    job, name = _exports(runtime).open_download(_batch_id(batch_id), _document_id(document_id))
+    if job.document_format is None:
+        raise InvariantError("downloadable document has a format")
+    return StreamingResponse(
+        _exports(runtime).iter_output(job),
+        media_type=_media_type(job.document_format),
+        headers={**_NO_STORE, "Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+def _close_zip(holder: AbstractContextManager[Path]) -> None:
+    holder.__exit__(None, None, None)
+
+
+@router.get("/{batch_id}/export")
+def export_batch(batch_id: UUID, runtime: Annotated[Runtime, Depends(_runtime)]) -> FileResponse:
+    """Completed masked files plus a metadata-only CSV. No inputs or work files."""
+    chosen = _batch_id(batch_id)
+    holder = _exports(runtime).zip_path(chosen)
+    try:
+        path = holder.__enter__()
+        return FileResponse(
+            path,
+            media_type="application/zip",
+            filename=zip_filename(chosen),
+            headers=_NO_STORE,
+            background=BackgroundTask(_close_zip, holder),
+        )
+    except BaseException:
+        holder.__exit__(None, None, None)
+        raise
 
 
 def _document_in(runtime: Runtime, batch_id: UUID, document_id: UUID) -> DocumentJob:

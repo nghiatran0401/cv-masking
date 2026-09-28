@@ -46,11 +46,14 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`. Only `COMPLETED`
-documents have a downloadable output. `COMPLETED` is reachable **only** with a
-verification `PASSED` result: either directly, or when HR approves findings-only
-review reasons on an output that already passed. A verifier `REVIEW_REQUIRED`
-result can never be approved into `COMPLETED`; HR can only deny it.
+Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`. Individual
+downloads are available for `COMPLETED` and for `REVIEW_REQUIRED` documents that
+already have a verified output (HR inspects the masked file before keep or
+delete). The ZIP export includes only `COMPLETED` files plus the metadata CSV.
+`COMPLETED` is reachable **only** with a verification `PASSED` result: either
+directly, or when HR approves findings-only review reasons on an output that
+already passed. A verifier `REVIEW_REQUIRED` result can never be approved into
+`COMPLETED`; HR can only deny it.
 
 `cancel` moves a document that is still waiting (`CREATED`, `UPLOADED`, `QUEUED`)
 to `CANCELLED`, carrying `JOB_CANCELLED` (D-33). A document the worker holds

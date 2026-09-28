@@ -7,18 +7,19 @@ UV_RUN := uv run --locked
 .PHONY: help install hooks guard dev dev-backend dev-frontend fmt lint typecheck test check
 
 help:
-	@echo "make install    Install locked dependencies and the git pre-commit file guard"
+	@echo "make install    Install locked dependencies, Playwright Chromium, and the git pre-commit file guard"
 	@echo "make guard      Refuse tracked documents, images, data files, and logs"
 	@echo "make dev        Run backend (127.0.0.1:8765) and frontend (127.0.0.1:5173)"
 	@echo "make fmt        Format backend and frontend"
 	@echo "make lint       Check formatting and lint"
 	@echo "make typecheck  mypy --strict and tsc"
-	@echo "make test       pytest and vitest"
+	@echo "make test       pytest, vitest, and Playwright"
 	@echo "make check      guard + lint + typecheck + test (quality gate)"
 
 install: hooks
 	cd $(BACKEND) && uv sync --locked
 	cd $(FRONTEND) && npm ci
+	cd $(FRONTEND) && npx playwright install chromium
 
 hooks:
 	git config core.hooksPath scripts/git-hooks
@@ -50,5 +51,6 @@ typecheck:
 test:
 	cd $(BACKEND) && $(UV_RUN) python scripts/run_pytest.py
 	cd $(FRONTEND) && npm test
+	cd $(FRONTEND) && npx playwright test
 
 check: guard lint typecheck test

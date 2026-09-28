@@ -45,9 +45,12 @@ def uploaded_document(
 
 
 def queued_document(
-    service: JobService, input_store: LocalInputStore, batch_id: BatchId
+    service: JobService,
+    input_store: LocalInputStore,
+    batch_id: BatchId,
+    content: bytes = SYNTHETIC_INPUT,
 ) -> DocumentJob:
-    job = uploaded_document(service, input_store, batch_id)
+    job = uploaded_document(service, input_store, batch_id, content=content)
     job = service.apply(job.document_id, lambda j, at: j.start_validation(at))
     return service.apply(job.document_id, lambda j, at: j.validation_passed(at))
 
@@ -59,8 +62,9 @@ def verifying_document(
     batch_id: BatchId,
     reasons: frozenset[ReviewReason] = frozenset(),
     output: bytes = SYNTHETIC_OUTPUT,
+    content: bytes = SYNTHETIC_INPUT,
 ) -> DocumentJob:
-    job = queued_document(service, input_store, batch_id)
+    job = queued_document(service, input_store, batch_id, content=content)
     job = service.apply(job.document_id, lambda j, at: j.start_processing(MaskingPolicy(), at))
     fmt = job.document_format or DocumentFormat.PDF
     stored = output_store.save(fmt, lambda sink: _write(sink, output), max_bytes=1_000_000)

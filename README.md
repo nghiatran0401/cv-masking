@@ -4,10 +4,9 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 12 — started batches are processed by one local background
-> worker process (validate, redact, verify each PDF or DOCX), with findings review
-> keep/delete endpoints. No UI yet (Stage 13). See
-> [docs/stage-plan.md](docs/stage-plan.md).
+> **Status:** Stage 13 — localhost HR UI for batch upload, status, findings
+> review, and masked downloads (PDF/DOCX, plus a masked-only ZIP and metadata
+> CSV). See [docs/stage-plan.md](docs/stage-plan.md).
 
 ## Development (macOS)
 
@@ -16,7 +15,7 @@ Node.js ≥ 24 with npm, and GNU Make.
 
 ```bash
 uv python install 3.12   # one-time
-make install             # locked dependencies + pre-commit file guard
+make install             # locked dependencies, Playwright Chromium, pre-commit file guard
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
 make check               # file guard + lint + type-check + tests (quality gate)
 ```

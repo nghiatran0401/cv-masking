@@ -4,7 +4,8 @@ Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implem
 Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D-24).
 Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker, its
 recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
-Uninstall follows in Stage 15.
+Stage 13 streams individual downloads and writes the ZIP export in a work directory
+that is deleted when the response finishes. Uninstall follows in Stage 15.
 
 ## 1. Privacy assumptions
 
@@ -122,7 +123,7 @@ by file permissions (A-2, A-3).
 | Uploaded input copy | data/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); or HR deletes the document/batch. A document in `REVIEW_REQUIRED` keeps its input until HR decides. |
 | Work/intermediate files | data/work | End of each upload identification or processing attempt (success or failure). |
 | Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
-| ZIP export | data/exports (later stage) | Streamed download finishes, or 1 h after creation. |
+| ZIP export | Temporary `export.zip` in `data/work/<uuid>/` | Deleted when the download response finishes (the work directory is closed in a background task). If the process dies first, the sweeper removes the work directory after 1 h. There is no `data/exports` directory. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |

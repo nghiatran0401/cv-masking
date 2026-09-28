@@ -17,6 +17,8 @@ with [AGENTS.md](AGENTS.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 - DOCX archives and XML are untrusted: bounded in-memory reads, no extraction to disk, no
   DTDs, entity resolution, or network access in the XML parser.
 - A document is `COMPLETED` only after independent verification `PASSED`.
+- The UI never renders extracted CV text. Original filenames stay in the browser tab
+  only (sessionStorage holds the language choice, not names).
 - Raw PII (entity values, extracted text, original filenames) is never written to SQLite,
   logs, API status responses, CSV reports, snapshots, or test output.
 - Errors cross boundaries only as codes from [docs/error-codes.md](docs/error-codes.md).

@@ -17,7 +17,99 @@ body {
 }
 
 .app {
-  max-width: 48rem;
+  max-width: 64rem;
   margin: 0 auto;
   padding: 2rem 1rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.languages {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.notice,
+.hint {
+  color: #333333;
+}
+
+.error {
+  color: #8b0000;
+}
+
+.dropzone {
+  border: 2px dashed #555555;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.dropzone.dragging {
+  background: #f4f4f4;
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.buttons,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+button,
+.button-link {
+  font: inherit;
+  color: #1a1a1a;
+  background: #efefef;
+  border: 1px solid #555555;
+  padding: 0.35rem 0.7rem;
+  text-decoration: none;
+  display: inline-block;
+  cursor: pointer;
+}
+
+button[aria-pressed="true"] {
+  background: #d8d8d8;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.salary {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #cccccc;
+  text-align: left;
+  padding: 0.5rem 0.4rem;
+  vertical-align: top;
 }

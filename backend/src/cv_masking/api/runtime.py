@@ -20,6 +20,7 @@ from cv_masking.adapters.worker import SubprocessProcessor
 from cv_masking.application import (
     DetectionService,
     DocumentPipeline,
+    ExportService,
     JobService,
     RedactionService,
     UploadLimits,
@@ -39,6 +40,8 @@ class Runtime:
     settings: Settings
     worker: WorkerLoop | None = None
     """The background queue; None in tests that drive documents by hand."""
+    exports: ExportService | None = None
+    """Masked-file downloads and the ZIP report."""
 
 
 def build_runtime(settings: Settings | None = None, *, root: StorageRoot | None = None) -> Runtime:
@@ -48,17 +51,22 @@ def build_runtime(settings: Settings | None = None, *, root: StorageRoot | None 
     inputs = LocalInputStore(storage)
     outputs = LocalOutputStore(storage)
     clock = SystemClock()
+    work = LocalWorkArea(storage)
     jobs = JobService(metadata, inputs, outputs, clock)
-    uploads = UploadService(
-        jobs, inputs, LocalWorkArea(storage), clock, limits_from_settings(chosen)
-    )
+    uploads = UploadService(jobs, inputs, work, clock, limits_from_settings(chosen))
     processor = SubprocessProcessor(
         build_pipeline, storage.path, timeout_seconds=chosen.job_timeout_seconds
     )
     worker = WorkerService(
         jobs, inputs, outputs, processor, clock, sweeper=LocalStorageSweeper(storage)
     )
-    return Runtime(jobs, uploads, chosen, WorkerLoop(worker, processor))
+    return Runtime(
+        jobs,
+        uploads,
+        chosen,
+        WorkerLoop(worker, processor),
+        ExportService(jobs, outputs, work),
+    )
 
 
 def build_pipeline(root_path: Path) -> DocumentPipeline:

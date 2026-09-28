@@ -1,6 +1,7 @@
 """Application services: use cases that coordinate the domain and the ports."""
 
 from cv_masking.application.detection import DetectionOutcome, DetectionService
+from cv_masking.application.exports import ExportService, download_filename, zip_filename
 from cv_masking.application.identify import IdentifiedKind, identify_file
 from cv_masking.application.jobs import ORPHAN_GRACE, JobService, ReconcileReport, Transition
 from cv_masking.application.processing import DocumentPipeline
@@ -14,6 +15,7 @@ __all__ = [
     "DetectionOutcome",
     "DetectionService",
     "DocumentPipeline",
+    "ExportService",
     "IdentifiedKind",
     "JobService",
     "ReconcileReport",
@@ -27,5 +29,7 @@ __all__ = [
     "VerificationService",
     "WorkerLoop",
     "WorkerService",
+    "download_filename",
     "identify_file",
+    "zip_filename",
 ]

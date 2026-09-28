@@ -152,6 +152,7 @@ def test_the_document_view_holds_codes_and_counts_only(
         "error_code",
         "review_reasons",
         "can_approve",
+        "has_output",
         "finding_counts",
         "hidden_removed",
         "version",
