@@ -303,6 +303,8 @@ schedule, and recovery and shutdown (data-retention §5.4 and §5.8).
 
 ## Questions/decisions for the tech lead
 
+Questions 1–5 were approved as D-41 after this stage; question 6 stays open for Stage 15.
+
 1. **D-41, terminal codes.** Should `DETECT_FAILED` and `JOB_TIMEOUT` stay
    terminal (`T`)? Detection is deterministic, so a re-upload fails the same
    way.
