@@ -14,9 +14,7 @@ from cv_masking.domain.verification import VERIFY_FAILURE_PRECEDENCE
 
 DOC = Path(__file__).resolve().parents[3] / "docs" / "error-codes.md"
 _CODE_ROW = re.compile(r"^\| `([A-Z0-9_]+)` \| (R|T|—) \|", re.MULTILINE)
-_REASON_ROW = re.compile(
-    r"^\| `([A-Z0-9_]+)` \| (blocking|hidden_content|findings|verifier) \|", re.MULTILINE
-)
+_REASON_ROW = re.compile(r"^\| `([A-Z0-9_]+)` \| (blocking|findings|verifier) \|", re.MULTILINE)
 
 
 def _doc_sections() -> tuple[str, str]:

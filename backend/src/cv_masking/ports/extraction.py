@@ -81,12 +81,15 @@ class ExtractedDocument:
 
 @dataclass(frozen=True, slots=True)
 class ExtractionResult:
-    """Exactly one of: extracted document, a failure code, or review reasons."""
+    """Exactly one of: extracted document, a failure code, or blocking review reasons.
+
+    Hidden content does not stop extraction: it is reported on the document
+    and always removed by redaction (D-32).
+    """
 
     document: ExtractedDocument | None = None
     failure: ErrorCode | None = None
     review: frozenset[ReviewReason] = frozenset()
-    alerts: tuple[HiddenContentAlert, ...] = ()
 
     def __post_init__(self) -> None:
         outcomes = (
@@ -102,12 +105,6 @@ class ExtractionResult:
             isinstance(reason, ReviewReason) for reason in self.review
         ):
             raise InvariantError("ExtractionResult.review must be ReviewReason values")
-        if not isinstance(self.alerts, tuple) or not all(
-            isinstance(alert, HiddenContentAlert) for alert in self.alerts
-        ):
-            raise InvariantError("ExtractionResult.alerts must contain HiddenContentAlert values")
-        if self.document is not None and self.alerts:
-            raise InvariantError("a successful extract reports hidden content on the document")
 
 
 class DocumentExtractor(Protocol):

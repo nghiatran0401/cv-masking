@@ -77,7 +77,7 @@ EXPECTED_FIELDS: dict[type, tuple[str, ...]] = {
         "uploaded_at",
         "attempt",
         "policy",
-        "hidden_content_approved",
+        "hidden_removed",
         "findings_review_approved",
         "output_ref",
         "finding_counts",

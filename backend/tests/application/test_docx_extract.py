@@ -2,7 +2,6 @@ import logging
 from collections.abc import Callable
 
 import pytest
-from service_helpers import uploaded_document
 from synthetic_docxs import (
     CELL,
     CONTROLLED,
@@ -25,13 +24,15 @@ from synthetic_docxs import (
 from synthetic_files import SYNTHETIC_PDF, synthetic_docx
 
 from cv_masking.adapters.docx import DocxExtractor
-from cv_masking.adapters.local_storage import LocalInputStore
-from cv_masking.application import JobService, ValidationService
+from cv_masking.adapters.local_storage import LocalInputStore, StorageRoot
+from cv_masking.api.runtime import build_pipeline
+from cv_masking.application import DocumentPipeline
 from cv_masking.domain.codes import ErrorCode, ReviewReason
-from cv_masking.domain.document_job import DocumentState
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentCategory
+from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
 from cv_masking.ports.extraction import ExtractionResult
+from cv_masking.ports.storage import StoredObject
 
 
 def _combined(result: ExtractionResult) -> str:
@@ -46,8 +47,12 @@ def extractor() -> DocxExtractor:
 
 
 @pytest.fixture
-def validation(service: JobService, input_store: LocalInputStore) -> ValidationService:
-    return ValidationService(service, input_store, {DocumentFormat.DOCX: DocxExtractor()})
+def pipeline(root: StorageRoot) -> DocumentPipeline:
+    return build_pipeline(root.path)
+
+
+def _source(input_store: LocalInputStore, data: bytes) -> StoredObject:
+    return input_store.save_stream(DocumentFormat.DOCX, [data], max_bytes=HARD_MAX_FILE_BYTES)
 
 
 def test_extracts_supported_layouts_deterministically(extractor: DocxExtractor) -> None:
@@ -116,32 +121,22 @@ def test_classifies_unsupported_docx(
     assert result.review == (frozenset({review}) if review is not None else frozenset())
 
 
-def test_hidden_content_holds_without_leaking_text(
-    service: JobService, input_store: LocalInputStore, validation: ValidationService
+def test_hidden_content_is_reported_by_kind_and_count_only(
+    input_store: LocalInputStore, pipeline: DocumentPipeline
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(
-        service,
-        input_store,
-        batch.batch_id,
-        DocumentFormat.DOCX,
-        hidden_comments_docx(),
-    )
-    outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.REVIEW_REQUIRED
-    assert outcome.job.review_reasons == frozenset({ReviewReason.DOCX_HIDDEN_CONTENT})
-    kinds = {alert.category for alert in outcome.alerts}
-    assert HiddenContentCategory.COMMENTS in kinds
-    dumped = repr(outcome.alerts)
+    report = pipeline.validate(_source(input_store, hidden_comments_docx()))
+    assert report.passed
+    assert HiddenContentCategory.COMMENTS in report.hidden_removed.as_dict()
+    dumped = repr(report)
     for fragment in ("Nguyen", "secret comment", "comments.xml"):
         assert fragment not in dumped
 
 
 @pytest.mark.parametrize(
-    ("builder", "category"),
+    ("builder", "category", "secret"),
     [
-        (hidden_tracked_docx, HiddenContentCategory.TRACKED_CHANGES),
-        (hidden_vanish_docx, HiddenContentCategory.HIDDEN_TEXT),
+        (hidden_tracked_docx, HiddenContentCategory.TRACKED_CHANGES, "inserted name"),
+        (hidden_vanish_docx, HiddenContentCategory.HIDDEN_TEXT, "secret vanish"),
     ],
     ids=("tracked", "vanish"),
 )
@@ -149,33 +144,32 @@ def test_hidden_categories_are_detected(
     extractor: DocxExtractor,
     builder: Callable[[], bytes],
     category: HiddenContentCategory,
+    secret: str,
 ) -> None:
     result = extractor.extract(builder())
-    assert result.review == frozenset({ReviewReason.DOCX_HIDDEN_CONTENT})
-    assert category in {alert.category for alert in result.alerts}
-    dumped = repr(result.alerts)
-    assert "inserted name" not in dumped
-    assert "secret vanish" not in dumped
+    assert result.document is not None
+    assert not result.review
+    assert category in {alert.category for alert in result.document.hidden}
+    dumped = repr(result.document.hidden)
+    assert secret not in dumped
 
 
-def test_validate_queues_without_logging_text(
-    service: JobService,
+def test_hidden_text_never_enters_the_text_model(extractor: DocxExtractor) -> None:
+    document = extractor.extract(hidden_vanish_docx()).document
+    assert document is not None
+    extracted = any("secret vanish" in part.text for part in document.parts)
+    assert not extracted
+
+
+def test_validate_passes_without_logging_text(
     input_store: LocalInputStore,
-    validation: ValidationService,
+    pipeline: DocumentPipeline,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(
-        service,
-        input_store,
-        batch.batch_id,
-        DocumentFormat.DOCX,
-        supported_layouts_docx(),
-    )
+    source = _source(input_store, supported_layouts_docx())
     with caplog.at_level(logging.DEBUG, logger="cv_masking"):
-        outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.QUEUED
-    assert outcome.extracted is not None
+        report = pipeline.validate(source)
+    assert report.passed
     logged = " ".join(record.getMessage() for record in caplog.records)
     for fragment in ("Nguyen", EMAIL, "Mau", CORE_CREATOR):
         assert fragment not in logged

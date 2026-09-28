@@ -5,11 +5,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from domain_builders import (
     BLOCKING_REASON,
-    HIDDEN_CONTENT_REASON,
     created,
     findings_review,
     later,
     processing,
+    queued,
+    rebuild,
     uploaded,
     validating,
     validation_review,
@@ -22,7 +23,7 @@ from cv_masking.domain.codes import ErrorCode, ReviewReason
 from cv_masking.domain.document_job import DocumentState
 from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.formats import DocumentFormat
-from cv_masking.domain.limits import MAX_PROCESSING_ATTEMPTS
+from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
 from cv_masking.domain.policy import MaskingPolicy
 from cv_masking.domain.verification import VerificationOutcome
 
@@ -51,23 +52,39 @@ def test_fail_refuses_codes_for_another_stage_or_format() -> None:
 
 def test_validation_review_refuses_findings_or_other_format_reasons() -> None:
     job = validating(PDF)
-    for reasons in (set(), {R.DETECT_LOW_CONFIDENCE}, {R.DOCX_HIDDEN_CONTENT}):
+    for reasons in (set(), {R.DETECT_LOW_CONFIDENCE}, {R.DOCX_ENCRYPTED}):
         with pytest.raises(InvalidTransitionError):
             job.validation_needs_review(reasons, later(job))
 
 
 @pytest.mark.parametrize("fmt", [PDF, DOCX])
-def test_hidden_content_can_be_approved_but_blocking_reasons_cannot(fmt: DocumentFormat) -> None:
-    job = validation_review(fmt)
-    approved = job.approve_review(later(job))
-    assert (approved.state, approved.hidden_content_approved) == (S.QUEUED, True)
-    blocked = validation_review(fmt, frozenset({BLOCKING_REASON[fmt], HIDDEN_CONTENT_REASON[fmt]}))
+def test_blocking_reasons_cannot_be_approved(fmt: DocumentFormat) -> None:
+    job = validation_review(fmt, frozenset({BLOCKING_REASON[fmt]}))
+    assert not job.can_approve_review
     with pytest.raises(InvalidTransitionError):
-        blocked.approve_review(later(blocked))
+        job.approve_review(later(job))
+
+
+def test_hidden_content_is_recorded_when_validation_passes_and_kept() -> None:
+    job = validating()
+    hidden = HiddenContentCounts(((HiddenContentCategory.ANNOTATIONS, 2),))
+    job = job.validation_passed(later(job), hidden)
+    assert job.hidden_removed == hidden
+    job = job.start_processing(MaskingPolicy(), later(job))
+    assert job.hidden_removed == hidden
+
+
+def test_hidden_content_cannot_precede_validation() -> None:
+    hidden = HiddenContentCounts(((HiddenContentCategory.COMMENTS, 1),))
+    with pytest.raises(InvariantError):
+        rebuild(uploaded(DOCX), hidden_removed=hidden)
+    with pytest.raises(InvariantError):
+        rebuild(validation_review(DOCX), hidden_removed=hidden)
 
 
 def test_approving_findings_completes_the_verified_output() -> None:
     job = findings_review()
+    assert job.can_approve_review
     result = job.approve_review(later(job))
     assert (result.state, result.findings_review_approved) == (S.COMPLETED, True)
     assert result.verification == job.verification
@@ -79,13 +96,19 @@ def test_verifier_review_cannot_be_approved() -> None:
         job.approve_review(later(job))
 
 
-def test_requeue_fails_the_job_after_the_last_attempt() -> None:
-    job = processing()
-    for _ in range(MAX_PROCESSING_ATTEMPTS - 1):
-        job = job.requeue_after_interruption(later(job))
-        job = job.start_processing(MaskingPolicy(), later(job))
-    result = job.requeue_after_interruption(later(job))
+@pytest.mark.parametrize("build", [validating, processing, verifying], ids=lambda b: b.__name__)
+def test_interrupting_a_held_document_fails_it_as_interrupted(build: object) -> None:
+    job = build()  # type: ignore[operator]
+    result = job.interrupt(later(job))
     assert (result.state, result.error_code) == (S.FAILED, E.JOB_INTERRUPTED)
+
+
+def test_a_document_being_processed_cannot_be_cancelled() -> None:
+    for job in (processing(), verifying()):
+        with pytest.raises(InvalidTransitionError):
+            job.cancel(later(job))
+    waiting = queued()
+    assert waiting.cancel(later(waiting)).error_code is E.JOB_CANCELLED
 
 
 def test_passed_verification_with_findings_reasons_requires_review() -> None:

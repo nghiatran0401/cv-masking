@@ -76,7 +76,7 @@ def _run(
     chosen = policy or MaskingPolicy()
     document, detection = _detect(cv_pdf(), chosen)
     source_bytes = data if data is not None else cv_pdf()
-    result = PyMuPDFRedactor().redact(source_bytes, detection.regions, remove_hidden=True)
+    result = PyMuPDFRedactor().redact(source_bytes, detection.regions)
     assert result.output is not None
     source = input_store.save_stream(
         DocumentFormat.PDF, [source_bytes], max_bytes=HARD_MAX_FILE_BYTES

@@ -100,10 +100,8 @@ RETRYABLE_ERROR_CODES: Final = frozenset(
     {
         ErrorCode.UPLOAD_MALFORMED_REQUEST,
         ErrorCode.UPLOAD_TIMEOUT,
-        ErrorCode.DETECT_FAILED,
         ErrorCode.REDACT_FAILED,
         ErrorCode.REDACT_OUTPUT_WRITE_FAILED,
-        ErrorCode.JOB_TIMEOUT,
         ErrorCode.JOB_INTERRUPTED,
         ErrorCode.STORAGE_WRITE_FAILED,
         ErrorCode.SECURITY_RATE_LIMITED,
@@ -122,8 +120,6 @@ class ReviewReason(StrEnum):
     DOCX_ENCRYPTED = "DOCX_ENCRYPTED"
     DOCX_TOO_LARGE_TEXT = "DOCX_TOO_LARGE_TEXT"
     DOCX_NO_TEXT = "DOCX_NO_TEXT"
-    PDF_HIDDEN_CONTENT = "PDF_HIDDEN_CONTENT"
-    DOCX_HIDDEN_CONTENT = "DOCX_HIDDEN_CONTENT"
     DETECT_LOW_CONFIDENCE = "DETECT_LOW_CONFIDENCE"
     DETECT_NO_CANDIDATE_NAME = "DETECT_NO_CANDIDATE_NAME"
     MAP_AMBIGUOUS = "MAP_AMBIGUOUS"
@@ -133,8 +129,6 @@ class ReviewReason(StrEnum):
 class ReviewKind(StrEnum):
     BLOCKING = "blocking"
     """Unsupported input; HR can only delete."""
-    HIDDEN_CONTENT = "hidden_content"
-    """Approve removes the hidden content and continues processing."""
     FINDINGS = "findings"
     """Approve accepts an already-verified output with uncertain findings."""
     VERIFIER = "verifier"
@@ -150,8 +144,6 @@ REVIEW_REASON_KINDS: Final[Mapping[ReviewReason, ReviewKind]] = MappingProxyType
         ReviewReason.DOCX_ENCRYPTED: ReviewKind.BLOCKING,
         ReviewReason.DOCX_TOO_LARGE_TEXT: ReviewKind.BLOCKING,
         ReviewReason.DOCX_NO_TEXT: ReviewKind.BLOCKING,
-        ReviewReason.PDF_HIDDEN_CONTENT: ReviewKind.HIDDEN_CONTENT,
-        ReviewReason.DOCX_HIDDEN_CONTENT: ReviewKind.HIDDEN_CONTENT,
         ReviewReason.DETECT_LOW_CONFIDENCE: ReviewKind.FINDINGS,
         ReviewReason.DETECT_NO_CANDIDATE_NAME: ReviewKind.FINDINGS,
         ReviewReason.MAP_AMBIGUOUS: ReviewKind.FINDINGS,
@@ -159,7 +151,7 @@ REVIEW_REASON_KINDS: Final[Mapping[ReviewReason, ReviewKind]] = MappingProxyType
     }
 )
 
-VALIDATION_REVIEW_KINDS: Final = frozenset({ReviewKind.BLOCKING, ReviewKind.HIDDEN_CONTENT})
+VALIDATION_REVIEW_KINDS: Final = frozenset({ReviewKind.BLOCKING})
 POST_PROCESSING_REVIEW_KINDS: Final = frozenset({ReviewKind.FINDINGS, ReviewKind.VERIFIER})
 
 _FORMAT_SPECIFIC_ERRORS: Final[Mapping[ErrorCode, DocumentFormat]] = MappingProxyType(

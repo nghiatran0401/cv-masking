@@ -18,10 +18,6 @@ COUNTS = FindingCounts.from_mapping({EntityType.EMAIL: 1, EntityType.PHONE: 2})
 VERIFIER_ID = "synthetic-verifier"
 VERIFIER_VERSION = "1.0.0"
 
-HIDDEN_CONTENT_REASON = {
-    DocumentFormat.PDF: ReviewReason.PDF_HIDDEN_CONTENT,
-    DocumentFormat.DOCX: ReviewReason.DOCX_HIDDEN_CONTENT,
-}
 BLOCKING_REASON = {
     DocumentFormat.PDF: ReviewReason.PDF_ENCRYPTED,
     DocumentFormat.DOCX: ReviewReason.DOCX_ENCRYPTED,
@@ -114,7 +110,7 @@ def validation_review(
     reasons: frozenset[ReviewReason] | None = None,
 ) -> DocumentJob:
     job = validating(fmt)
-    chosen = reasons if reasons is not None else frozenset({HIDDEN_CONTENT_REASON[fmt]})
+    chosen = reasons if reasons is not None else frozenset({BLOCKING_REASON[fmt]})
     return job.validation_needs_review(chosen, later(job))
 
 
@@ -153,7 +149,7 @@ def rebuild(job: DocumentJob, **changes: object) -> DocumentJob:
 
 
 def job_in_state(state: DocumentState, fmt: DocumentFormat = DocumentFormat.PDF) -> DocumentJob:
-    """A representative job; REVIEW_REQUIRED is an approvable hidden-content review."""
+    """A representative job; REVIEW_REQUIRED is an approvable findings review."""
     match state:
         case DocumentState.CREATED:
             return created()
@@ -168,7 +164,7 @@ def job_in_state(state: DocumentState, fmt: DocumentFormat = DocumentFormat.PDF)
         case DocumentState.VERIFYING:
             return verifying(fmt)
         case DocumentState.REVIEW_REQUIRED:
-            return validation_review(fmt)
+            return findings_review(fmt)
         case DocumentState.COMPLETED:
             return completed(fmt)
         case DocumentState.FAILED:

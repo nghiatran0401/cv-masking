@@ -79,7 +79,7 @@ def _run(
     source_bytes = data if data is not None else fixture.cv_docx()
     document = _source_document(source_bytes)
     detection = DetectionService(PresidioDetector()).detect(document, chosen)
-    result = DocxXmlRedactor().redact(source_bytes, detection.docx_ranges, remove_hidden=True)
+    result = DocxXmlRedactor().redact(source_bytes, detection.docx_ranges)
     assert result.output is not None
     source = input_store.save_stream(
         DocumentFormat.DOCX, [source_bytes], max_bytes=HARD_MAX_FILE_BYTES

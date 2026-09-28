@@ -29,6 +29,7 @@ from cv_masking.domain.codes import (
 from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.findings import FindingCounts
 from cv_masking.domain.formats import DocumentFormat
+from cv_masking.domain.hidden import NO_HIDDEN_CONTENT, HiddenContentCounts
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef, Sha256Digest
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES, MAX_PROCESSING_ATTEMPTS
 from cv_masking.domain.policy import MaskingPolicy
@@ -57,9 +58,14 @@ TERMINAL_STATES: Final = frozenset(
         DocumentState.CANCELLED,
     }
 )
-CANCELLABLE_STATES: Final = (
-    frozenset(DocumentState) - TERMINAL_STATES - {DocumentState.REVIEW_REQUIRED}
+CANCELLABLE_STATES: Final = frozenset(
+    {DocumentState.CREATED, DocumentState.UPLOADED, DocumentState.QUEUED}
 )
+"""Only documents still waiting for the worker (D-33)."""
+INTERRUPTIBLE_STATES: Final = frozenset(
+    {DocumentState.VALIDATING, DocumentState.PROCESSING, DocumentState.VERIFYING}
+)
+"""States the worker holds a document in; left there only by a crash or shutdown."""
 
 _STATES_WITH_UPLOAD: Final = frozenset(
     {
@@ -85,7 +91,7 @@ _STATES_WITHOUT_OUTPUT: Final = frozenset(
 _STATES_WITH_POLICY: Final = frozenset(
     {DocumentState.PROCESSING, DocumentState.VERIFYING, DocumentState.COMPLETED}
 )
-_STATES_BEFORE_APPROVAL: Final = frozenset(
+_STATES_BEFORE_EXTRACTION: Final = frozenset(
     {DocumentState.CREATED, DocumentState.UPLOADED, DocumentState.VALIDATING}
 )
 
@@ -119,7 +125,7 @@ class DocumentJob:
     uploaded_at: datetime | None = None
     attempt: int = 0
     policy: MaskingPolicy | None = None
-    hidden_content_approved: bool = False
+    hidden_removed: HiddenContentCounts = NO_HIDDEN_CONTENT
     findings_review_approved: bool = False
     output_ref: ObjectRef | None = None
     finding_counts: FindingCounts | None = None
@@ -150,6 +156,16 @@ class DocumentJob:
     @property
     def is_terminal(self) -> bool:
         return self.state in TERMINAL_STATES
+
+    @property
+    def can_approve_review(self) -> bool:
+        """HR may keep the output: only findings reasons, and verification PASSED (D-34)."""
+        kinds = {REVIEW_REASON_KINDS[reason] for reason in self.review_reasons}
+        return (
+            self.state is DocumentState.REVIEW_REQUIRED
+            and kinds == {ReviewKind.FINDINGS}
+            and self._verification_passed()
+        )
 
     # ------------------------------------------------------------------ upload
 
@@ -188,9 +204,12 @@ class DocumentJob:
         self._require_state("start_validation", DocumentState.UPLOADED)
         return self._advance(at, state=DocumentState.VALIDATING)
 
-    def validation_passed(self, at: datetime) -> "DocumentJob":
+    def validation_passed(
+        self, at: datetime, hidden_removed: HiddenContentCounts = NO_HIDDEN_CONTENT
+    ) -> "DocumentJob":
+        """``hidden_removed`` is what redaction will always remove (D-32)."""
         self._require_state("validation_passed", DocumentState.VALIDATING)
-        return self._advance(at, state=DocumentState.QUEUED)
+        return self._advance(at, state=DocumentState.QUEUED, hidden_removed=hidden_removed)
 
     def validation_needs_review(
         self, reasons: Iterable[ReviewReason], at: datetime
@@ -207,15 +226,7 @@ class DocumentJob:
 
     def approve_review(self, at: datetime) -> "DocumentJob":
         self._require_state("approve_review", DocumentState.REVIEW_REQUIRED)
-        kinds = {REVIEW_REASON_KINDS[reason] for reason in self.review_reasons}
-        if kinds == {ReviewKind.HIDDEN_CONTENT}:
-            return self._advance(
-                at,
-                state=DocumentState.QUEUED,
-                review_reasons=frozenset(),
-                hidden_content_approved=True,
-            )
-        if kinds == {ReviewKind.FINDINGS} and self._verification_passed():
+        if self.can_approve_review:
             return self._advance(
                 at,
                 state=DocumentState.COMPLETED,
@@ -290,24 +301,14 @@ class DocumentJob:
             return self._advance(at, state=DocumentState.REVIEW_REQUIRED, verification=result)
         return self._advance(at, state=DocumentState.COMPLETED, verification=result)
 
-    def requeue_after_interruption(self, at: datetime) -> "DocumentJob":
-        self._require_state(
-            "requeue_after_interruption", DocumentState.PROCESSING, DocumentState.VERIFYING
-        )
-        if self.attempt >= MAX_PROCESSING_ATTEMPTS:
-            return self._advance(
-                at,
-                state=DocumentState.FAILED,
-                review_reasons=frozenset(),
-                error_code=ErrorCode.JOB_INTERRUPTED,
-            )
+    def interrupt(self, at: datetime) -> "DocumentJob":
+        """The worker stopped holding this document (crash, restart, shutdown): FAILED (D-33)."""
+        self._require_state("interrupt", *INTERRUPTIBLE_STATES)
         return self._advance(
             at,
-            state=DocumentState.QUEUED,
-            policy=None,
-            output_ref=None,
-            finding_counts=None,
+            state=DocumentState.FAILED,
             review_reasons=frozenset(),
+            error_code=ErrorCode.JOB_INTERRUPTED,
         )
 
     # ------------------------------------------------------------------ failure / cancel
@@ -380,6 +381,7 @@ class DocumentJob:
             (self.output_ref, (ObjectRef, type(None)), "output_ref"),
             (self.finding_counts, (FindingCounts, type(None)), "finding_counts"),
             (self.verification, (VerificationResult, type(None)), "verification"),
+            (self.hidden_removed, HiddenContentCounts, "hidden_removed"),
             (self.error_code, (ErrorCode, type(None)), "error_code"),
         )
         for value, expected, name in checks:
@@ -391,7 +393,6 @@ class DocumentJob:
             raise InvariantError("DocumentJob.updated_at must not precede created_at")
         require_int(self.version, "DocumentJob.version", minimum=0)
         require_int(self.attempt, "DocumentJob.attempt", minimum=0, maximum=MAX_PROCESSING_ATTEMPTS)
-        require_bool(self.hidden_content_approved, "DocumentJob.hidden_content_approved")
         require_bool(self.findings_review_approved, "DocumentJob.findings_review_approved")
         if not isinstance(self.review_reasons, frozenset) or not all(
             isinstance(reason, ReviewReason) for reason in self.review_reasons
@@ -441,8 +442,8 @@ class DocumentJob:
             raise InvariantError("DocumentJob.output_ref must differ from input_ref")
         if self.verification is not None and self.verification.output_ref != self.output_ref:
             raise InvariantError("DocumentJob.verification does not match output_ref")
-        if self.hidden_content_approved and self.state in _STATES_BEFORE_APPROVAL:
-            raise InvariantError("hidden content cannot be approved before validation")
+        if self.hidden_removed.items and self.state in _STATES_BEFORE_EXTRACTION:
+            raise InvariantError("hidden content is only known after validation")
 
     def _check_review_fields(self) -> None:
         kinds = {REVIEW_REASON_KINDS[reason] for reason in self.review_reasons}
@@ -450,7 +451,11 @@ class DocumentJob:
             if not kinds:
                 raise InvariantError("a REVIEW_REQUIRED DocumentJob needs review reasons")
             if kinds <= VALIDATION_REVIEW_KINDS:
-                if self.output_ref is not None or self.verification is not None:
+                if (
+                    self.output_ref is not None
+                    or self.verification is not None
+                    or self.hidden_removed.items
+                ):
                     raise InvariantError("validation review cannot have output data")
             elif kinds <= POST_PROCESSING_REVIEW_KINDS:
                 if (

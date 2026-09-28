@@ -6,6 +6,12 @@ from domain_builders import T0, new_finding_id, new_object_ref
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.findings import BoundingBox, DocxLocation, EntityFinding, PdfLocation
+from cv_masking.domain.hidden import (
+    NO_HIDDEN_CONTENT,
+    HiddenContentAlert,
+    HiddenContentCategory,
+    HiddenContentCounts,
+)
 from cv_masking.domain.ids import BatchId, DocumentId, FindingId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import REPLACEMENT_LABELS, EntityType
 from cv_masking.domain.verification import (
@@ -92,3 +98,39 @@ def test_verification_result_is_consistent() -> None:
     ):
         with pytest.raises(InvariantError):
             _result(**changes)
+
+
+def test_hidden_content_counts_total_alerts_per_category_in_category_order() -> None:
+    alerts = (
+        HiddenContentAlert(HiddenContentCategory.COMMENTS, 2, parts=("comments",)),
+        HiddenContentAlert(HiddenContentCategory.ANNOTATIONS, 1, pages=(1,)),
+        HiddenContentAlert(HiddenContentCategory.COMMENTS, 3, parts=("footnotes",)),
+    )
+    counts = HiddenContentCounts.from_alerts(alerts)
+    assert counts.items == (
+        (HiddenContentCategory.ANNOTATIONS, 1),
+        (HiddenContentCategory.COMMENTS, 5),
+    )
+    assert counts.as_dict() == {
+        HiddenContentCategory.ANNOTATIONS: 1,
+        HiddenContentCategory.COMMENTS: 5,
+    }
+    assert HiddenContentCounts.from_alerts(()) == NO_HIDDEN_CONTENT
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [(HiddenContentCategory.COMMENTS, 1)],
+        ((HiddenContentCategory.COMMENTS, 0),),
+        ((HiddenContentCategory.COMMENTS, True),),
+        (("comments", 1),),
+        ((HiddenContentCategory.COMMENTS, 1), (HiddenContentCategory.COMMENTS, 1)),
+        ((HiddenContentCategory.COMMENTS, 1), (HiddenContentCategory.ANNOTATIONS, 1)),
+        ((HiddenContentCategory.COMMENTS,),),
+    ],
+    ids=["list", "zero", "bool", "plain-string", "repeated", "out-of-order", "not-a-pair"],
+)
+def test_hidden_content_counts_refuse_malformed_items(items: object) -> None:
+    with pytest.raises(InvariantError):
+        HiddenContentCounts(items)  # type: ignore[arg-type]

@@ -57,7 +57,7 @@ def _detect(data: bytes, policy: MaskingPolicy | None = None) -> DetectionOutcom
 
 
 def _redact(data: bytes, regions: tuple[RedactionRegion, ...]) -> bytes:
-    result = PyMuPDFRedactor().redact(data, regions, remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, regions)
     assert result.failure is None
     assert result.output is not None
     return result.output
@@ -113,7 +113,7 @@ def test_unredacted_text_and_page_survive() -> None:
 def test_every_region_gets_one_label_at_minimum_size_or_solid_fill() -> None:
     data = cv_pdf()
     regions = _detect(data).regions
-    result = PyMuPDFRedactor().redact(data, regions, remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, regions)
     assert result.output is not None
     labels = list(_label_spans(result.output))
     assert result.labelled_regions + result.solid_regions == len(regions)
@@ -140,7 +140,7 @@ def test_a_label_that_does_not_fit_leaves_a_solid_box() -> None:
     document.save(buffer)
     data = buffer.getvalue()
     region = _region(_word_box(data, "Ab"), entity=EntityType.EMAIL)
-    result = PyMuPDFRedactor().redact(data, (region,), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, (region,))
     assert result.output is not None
     assert (result.labelled_regions, result.solid_regions) == (0, 1)
     assert list(_label_spans(result.output)) == []
@@ -234,7 +234,7 @@ def test_input_bytes_are_never_modified() -> None:
     ids=["empty", "garbage", "truncated"],
 )
 def test_unreadable_input_fails_closed(data: bytes) -> None:
-    result = PyMuPDFRedactor().redact(data, (), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, ())
     assert result.failure is ErrorCode.REDACT_FAILED
     assert result.output is None
 
@@ -243,7 +243,7 @@ def test_a_region_on_a_missing_page_fails() -> None:
     data = cv_pdf()
     box = _word_box(data, TARGET)
     region = RedactionRegion(2, (box,), EntityType.EMAIL, (FindingId(uuid4()),))
-    result = PyMuPDFRedactor().redact(data, (region,), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, (region,))
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
@@ -251,7 +251,7 @@ def test_encrypted_input_fails() -> None:
     document = pymupdf.open(stream=cv_pdf(), filetype="pdf")
     buffer = io.BytesIO()
     document.save(buffer, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="synthetic")
-    result = PyMuPDFRedactor().redact(buffer.getvalue(), (), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(buffer.getvalue(), ())
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
@@ -259,7 +259,7 @@ def test_text_left_under_a_region_fails_the_output_check(monkeypatch: pytest.Mon
     """If apply_redactions ever stopped removing text, the output check refuses it."""
     data = cv_pdf()
     monkeypatch.setattr(pymupdf.Page, "apply_redactions", lambda *args, **kwargs: True)
-    result = PyMuPDFRedactor().redact(data, _detect(data).regions, remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, _detect(data).regions)
     assert result.failure is ErrorCode.REDACT_FAILED
     assert result.output is None
 

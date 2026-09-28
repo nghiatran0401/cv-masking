@@ -54,7 +54,7 @@ _ops = st.one_of(
     st.tuples(st.just("start_processing"), st.booleans()),
     st.tuples(st.just("output_written"), _reasons),
     st.tuples(st.just("record_verification"), _verification),
-    st.tuples(st.just("requeue_after_interruption"), st.none()),
+    st.tuples(st.just("interrupt"), st.none()),
     st.tuples(st.just("fail"), st.sampled_from(ErrorCode)),
     st.tuples(st.just("cancel"), st.none()),
 )

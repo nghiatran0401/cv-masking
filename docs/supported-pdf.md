@@ -33,7 +33,7 @@ Extension and client-supplied content type are advisory; **content decides**.
 | Extractable characters per page | 8 (Stage 6) | Validation | `PDF_NO_TEXT_LAYER` |
 | Zero pages | — | Validation | `PDF_NO_PAGES` |
 | Decompressed stream size / object count | set in Stage 14 | Validation | `PDF_RESOURCE_LIMIT` |
-| Per-document processing time | set in Stage 12 | Worker | `JOB_TIMEOUT` |
+| Per-document processing time | 120 s (validation, processing, and verification together; `CV_MASKING_JOB_TIMEOUT_SECONDS`, hard cap 600 s; Stage 12) | Worker (process ended) | `JOB_TIMEOUT` |
 
 ## 3. Structural classification
 
@@ -81,8 +81,8 @@ contains the hidden text, annotation contents, attachment names, or script sourc
 All hidden content is **always removed** from the output (D-32); HR is not asked. The
 document goes through normal detection/redaction, the verifier checks that no category
 remains, and the per-document status and report show what was removed. If removal
-cannot be done safely the document fails with `REDACT_SANITIZE_FAILED`. Until Stage 12
-rewires the jobs, the Stage 6/6b extractors still return the older hidden-content review.
+cannot be done safely the document fails with `REDACT_SANITIZE_FAILED`. The kinds and
+counts removed are stored on the document (Stage 12).
 
 Always-stripped components (metadata, links, outlines, thumbnails, tagged structure) are removed
 without alerting; see [masking-policy.md](masking-policy.md) §6. Embedded images are

@@ -156,7 +156,10 @@ class _Reader:
         failures = self._children(
             "SELECT code FROM document_verification_failures WHERE document_id = ?", key
         )
-        return rows.document_from_rows(row, counts, reasons, failures)
+        hidden = self._children(
+            "SELECT category, count FROM document_hidden_content WHERE document_id = ?", key
+        )
+        return rows.document_from_rows(row, counts, reasons, failures, hidden)
 
     def _children(self, sql: str, key: tuple[object, ...]) -> list[rows.Row]:
         return [rows.as_row(row) for row in self._conn.execute(sql, key).fetchall()]
@@ -212,6 +215,7 @@ class _Transaction(_Reader):
             "document_finding_counts",
             "document_review_reasons",
             "document_verification_failures",
+            "document_hidden_content",
         ):
             self._conn.execute(
                 f"DELETE FROM {table} WHERE document_id = ?",  # noqa: S608 - fixed table names
@@ -239,6 +243,10 @@ class _Transaction(_Reader):
         self._conn.executemany(
             "INSERT INTO document_verification_failures (document_id, code) VALUES (?, ?)",
             rows.verification_failure_params(job),
+        )
+        self._conn.executemany(
+            "INSERT INTO document_hidden_content (document_id, category, count) VALUES (?, ?, ?)",
+            rows.hidden_content_params(job),
         )
 
     def _raise_missing_or_conflict(
@@ -382,6 +390,10 @@ class SqliteMetadataStore:
                 except OSError as error:
                     raise StorageError(ErrorCode.STORAGE_PATH_REJECTED) from error
                 try:
+                    # Another connection closing may unlink a side file between the
+                    # open and the check; an unlinked file is never reused.
+                    if suffix and os.fstat(fd).st_nlink == 0:
+                        continue
                     require_owned_file(fd)
                 finally:
                     os.close(fd)

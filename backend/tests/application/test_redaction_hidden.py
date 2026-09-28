@@ -1,9 +1,9 @@
 # mypy: disable-error-code="no-untyped-call,attr-defined"
-"""Stage 10: approved hidden content and always-stripped components are removed.
+"""Stage 10: hidden content and always-stripped components are removed.
 
-masking-policy.md §6 and D-29. Every hidden-content category is removed and
-checked on its own and all together. Checks are booleans or counts; messages
-carry category names and case indexes only.
+masking-policy.md §6 and D-32: hidden content is always removed, never approved.
+Every category is removed and checked on its own and all together. Checks are
+booleans or counts; messages carry category names and case indexes only.
 """
 
 import io
@@ -29,7 +29,7 @@ from cv_masking.adapters.detection import PresidioDetector
 from cv_masking.adapters.pdf import PyMuPDFExtractor, PyMuPDFRedactor
 from cv_masking.adapters.pdf.hidden import scan_hidden
 from cv_masking.application import DetectionService
-from cv_masking.domain.codes import ErrorCode, ReviewReason
+from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.findings import RedactionRegion
 from cv_masking.domain.hidden import HiddenContentCategory
 from cv_masking.domain.policy import MaskingPolicy
@@ -73,10 +73,10 @@ def test_each_fixture_is_classified_as_its_category(category: str) -> None:
 
 
 @pytest.mark.parametrize("categories", [*((name,) for name in _CATEGORIES), _CATEGORIES])
-def test_approved_hidden_content_is_removed(categories: tuple[str, ...]) -> None:
+def test_hidden_content_is_always_removed(categories: tuple[str, ...]) -> None:
     base = cv_pdf()
     data = with_hidden(base, *categories)
-    result = PyMuPDFRedactor().redact(data, _regions(base), remove_hidden=True)
+    result = PyMuPDFRedactor().redact(data, _regions(base))
     assert result.failure is None, "removal failed"
     assert result.output is not None
     assert _categories(result.output) == set()
@@ -91,24 +91,24 @@ def test_approved_hidden_content_is_removed(categories: tuple[str, ...]) -> None
 
 
 def _redacted_base(base: bytes) -> bytes:
-    result = PyMuPDFRedactor().redact(base, _regions(base), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(base, _regions(base))
     assert result.output is not None
     return result.output
 
 
 @pytest.mark.parametrize("category", _CATEGORIES)
-def test_hidden_content_without_approval_is_refused(category: str) -> None:
-    data = with_hidden(cv_pdf(), category)
-    result = PyMuPDFRedactor().redact(data, (), remove_hidden=False)
-    assert result.failure is ErrorCode.REDACT_SANITIZE_FAILED
-    assert result.output is None
+def test_hidden_content_is_removed_with_nothing_to_redact(category: str) -> None:
+    result = PyMuPDFRedactor().redact(with_hidden(cv_pdf(), category), ())
+    assert result.output is not None, "removal failed"
+    assert _categories(result.output) == set()
 
 
-def test_hidden_content_is_refused_by_validation_before_redaction() -> None:
+def test_extraction_reports_hidden_content_and_still_returns_the_text() -> None:
     result = PyMuPDFExtractor().extract(with_hidden(cv_pdf(), *_CATEGORIES))
-    assert result.review == frozenset({ReviewReason.PDF_HIDDEN_CONTENT})
-    found = {alert.category for alert in result.alerts}
-    assert found == set(HiddenContentCategory) & {HiddenContentCategory(c) for c in _CATEGORIES}
+    assert result.document is not None
+    assert not result.review
+    found = {alert.category for alert in result.document.hidden}
+    assert found == {HiddenContentCategory(c) for c in _CATEGORIES}
 
 
 def test_render_mode_three_text_is_hidden_and_never_extracted() -> None:
@@ -116,9 +116,11 @@ def test_render_mode_three_text_is_hidden_and_never_extracted() -> None:
     document[0].insert_text((300, 700), HIDDEN, fontsize=11, render_mode=3)
     buffer = io.BytesIO()
     document.save(buffer)
-    result = PyMuPDFExtractor().extract(buffer.getvalue())
-    assert result.review == frozenset({ReviewReason.PDF_HIDDEN_CONTENT})
-    assert [alert.category for alert in result.alerts] == [HiddenContentCategory.INVISIBLE_TEXT]
+    model = PyMuPDFExtractor().extract(buffer.getvalue()).document
+    assert model is not None
+    assert [alert.category for alert in model.hidden] == [HiddenContentCategory.INVISIBLE_TEXT]
+    extracted = any(HIDDEN in part.text for part in model.parts)
+    assert not extracted, "invisible text entered the text model"
 
 
 def test_fully_transparent_text_is_hidden() -> None:
@@ -141,15 +143,15 @@ def test_layer_visibility_viewers_disagree_on_fails_closed() -> None:
     document[0].insert_text((300, 520), HIDDEN, fontsize=11, oc=ocmd)
     buffer = io.BytesIO()
     document.save(buffer)
-    result = PyMuPDFRedactor().redact(buffer.getvalue(), (), remove_hidden=True)
+    result = PyMuPDFRedactor().redact(buffer.getvalue(), ())
     assert result.failure is ErrorCode.REDACT_SANITIZE_FAILED
     assert result.output is None
 
 
-def test_always_stripped_components_are_removed_without_approval() -> None:
+def test_always_stripped_components_are_removed() -> None:
     data = with_always_stripped(cv_pdf())
     assert _categories(data) == set()
-    result = PyMuPDFRedactor().redact(data, _regions(cv_pdf()), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(data, _regions(cv_pdf()))
     assert result.output is not None
     document = pymupdf.open(stream=result.output, filetype="pdf")
     try:
@@ -186,7 +188,7 @@ def test_output_is_a_full_rewrite_without_earlier_revisions(tmp_path: Path) -> N
     document.close()
     incremental = path.read_bytes()
     assert incremental.count(b"%%EOF") == 2
-    result = PyMuPDFRedactor().redact(incremental, (), remove_hidden=False)
+    result = PyMuPDFRedactor().redact(incremental, ())
     assert result.output is not None
     assert result.output.count(b"%%EOF") == 1
     leaked = AUTHOR.encode() in result.output

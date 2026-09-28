@@ -17,4 +17,7 @@ MAX_XML_DEPTH: Final = 64
 MAX_PROCESSING_ATTEMPTS: Final = 3
 DEFAULT_UPLOAD_TIMEOUT_SECONDS: Final = 60
 HARD_MAX_UPLOAD_TIMEOUT_SECONDS: Final = 15 * 60
+DEFAULT_JOB_TIMEOUT_SECONDS: Final = 120
+"""Wall-clock budget for one document (validate, redact, verify); typical CVs need seconds."""
+HARD_MAX_JOB_TIMEOUT_SECONDS: Final = 10 * 60
 READ_CHUNK_BYTES: Final = 64 * 1024

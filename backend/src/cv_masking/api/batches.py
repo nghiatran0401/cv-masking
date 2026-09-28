@@ -44,6 +44,8 @@ class BatchView(BaseModel):
 
 
 class DocumentView(BaseModel):
+    """Safe status only: IDs, states, codes, and counts. Never names or text."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     document_id: str
@@ -53,6 +55,10 @@ class DocumentView(BaseModel):
     size_bytes: int | None
     attempt: int
     error_code: str | None
+    review_reasons: tuple[str, ...]
+    can_approve: bool
+    finding_counts: dict[str, int] | None
+    hidden_removed: dict[str, int]
     version: int
 
 
@@ -100,6 +106,12 @@ def _document_view(job: DocumentJob) -> DocumentView:
         size_bytes=job.size_bytes,
         attempt=job.attempt,
         error_code=job.error_code.value if job.error_code is not None else None,
+        review_reasons=tuple(sorted(reason.value for reason in job.review_reasons)),
+        can_approve=job.can_approve_review,
+        finding_counts=None
+        if job.finding_counts is None
+        else {entity.value: count for entity, count in job.finding_counts.items},
+        hidden_removed={category.value: count for category, count in job.hidden_removed.items},
         version=job.version,
     )
 
@@ -141,9 +153,10 @@ def set_mask_salary(
 def start_batch(
     batch_id: UUID, body: VersionedRequest, runtime: Annotated[Runtime, Depends(_runtime)]
 ) -> BatchView:
-    return _batch_view(
-        runtime.jobs.start_batch(_batch_id(batch_id), expected_version=body.expected_version)
-    )
+    started = runtime.jobs.start_batch(_batch_id(batch_id), expected_version=body.expected_version)
+    if runtime.worker is not None:
+        runtime.worker.notify()
+    return _batch_view(started)
 
 
 @router.delete("/{batch_id}", status_code=204)
@@ -172,11 +185,57 @@ def upload_document(
 def remove_document(
     batch_id: UUID, document_id: UUID, runtime: Annotated[Runtime, Depends(_runtime)]
 ) -> None:
+    runtime.jobs.remove_document(_document_in(runtime, batch_id, document_id).document_id)
+
+
+@router.post("/{batch_id}/documents/{document_id}/cancel")
+def cancel_document(
+    batch_id: UUID,
+    document_id: UUID,
+    body: VersionedRequest,
+    runtime: Annotated[Runtime, Depends(_runtime)],
+) -> DocumentView:
+    """Only a document still waiting for the worker can be cancelled (D-33)."""
+    job = _document_in(runtime, batch_id, document_id)
+    return _document_view(
+        runtime.jobs.cancel_document(job.document_id, expected_version=body.expected_version)
+    )
+
+
+@router.post("/{batch_id}/documents/{document_id}/approve")
+def approve_review(
+    batch_id: UUID,
+    document_id: UUID,
+    body: VersionedRequest,
+    runtime: Annotated[Runtime, Depends(_runtime)],
+) -> DocumentView:
+    """Keep a verified output held for findings review (D-34)."""
+    job = _document_in(runtime, batch_id, document_id)
+    return _document_view(
+        runtime.jobs.approve_review(job.document_id, expected_version=body.expected_version)
+    )
+
+
+@router.post("/{batch_id}/documents/{document_id}/deny")
+def deny_review(
+    batch_id: UUID,
+    document_id: UUID,
+    body: VersionedRequest,
+    runtime: Annotated[Runtime, Depends(_runtime)],
+) -> DocumentView:
+    """Delete a document held for review; its output and input are deleted (D-34)."""
+    job = _document_in(runtime, batch_id, document_id)
+    return _document_view(
+        runtime.jobs.deny_review(job.document_id, expected_version=body.expected_version)
+    )
+
+
+def _document_in(runtime: Runtime, batch_id: UUID, document_id: UUID) -> DocumentJob:
     chosen_batch = _batch_id(batch_id)
     job = runtime.jobs.get_document(_document_id(document_id))
     if job.batch_id != chosen_batch:
         raise ApiError(ErrorCode.INTERNAL_ERROR, 404)
-    runtime.jobs.remove_document(job.document_id)
+    return job
 
 
 def _iter_file(upload: UploadFile) -> Iterator[bytes]:

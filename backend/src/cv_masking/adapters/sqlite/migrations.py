@@ -128,6 +128,35 @@ MIGRATIONS: Final = (
             """,
         ),
     ),
+    Migration(
+        2,
+        (
+            # D-32: hidden content is always removed; the approval step is gone.
+            # A document still waiting for that approval fails and can be re-uploaded.
+            """
+            UPDATE documents
+            SET state = 'failed', error_code = 'JOB_INTERRUPTED', version = version + 1
+            WHERE document_id IN (
+                SELECT document_id FROM document_review_reasons
+                WHERE reason IN ('PDF_HIDDEN_CONTENT', 'DOCX_HIDDEN_CONTENT')
+            )
+            """,
+            """
+            DELETE FROM document_review_reasons
+            WHERE reason IN ('PDF_HIDDEN_CONTENT', 'DOCX_HIDDEN_CONTENT')
+            """,
+            "ALTER TABLE documents DROP COLUMN hidden_content_approved",
+            """
+            CREATE TABLE document_hidden_content (
+                document_id TEXT NOT NULL REFERENCES documents (document_id) ON DELETE CASCADE,
+                category TEXT NOT NULL
+                    CHECK (length(category) BETWEEN 1 AND 32 AND category NOT GLOB '*[^a-z_]*'),
+                count INTEGER NOT NULL CHECK (count >= 1),
+                PRIMARY KEY (document_id, category)
+            ) STRICT, WITHOUT ROWID
+            """,
+        ),
+    ),
 )
 LATEST_VERSION: Final = MIGRATIONS[-1].version
 

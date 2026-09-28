@@ -25,7 +25,7 @@ then handoff, then **git commit** (D-18).
 | 10b | DOCX redaction | Complete (committed) |
 | 11 | Independent verification | Complete (committed) |
 | 11b | DOCX verification | Complete (committed) |
-| 12 | Local job queue | Not started |
+| 12 | Local job queue | Complete (committed) |
 | 13 | HR interface | Not started |
 | 14 | Runtime hardening | Not started |
 | 15 | Local build and launcher | Not started |
@@ -190,7 +190,7 @@ Execute Stage 10b only. Implement DocxRedactor that removes mapped character ran
 
 Decision D-32 (after Stage 10): hidden content is always removed; there is no approval input.
 
-Stage 10b notes: text is removed by splicing the original XML bytes, so namespace prefixes and every unedited byte stay the same; the editor can only delete or unwrap elements, drop attributes, and replace `w:t` text, so formatting-only redaction cannot be expressed. Outputs are stored as `<uuid>.docx`; the `redacted-<uuid>.docx` download name is applied in Stage 13, as for PDF. Like the PDF redactor, it still takes the `remove_hidden` flag until Stage 12 removes it (D-32). See [stage-handoffs/stage-10b.md](stage-handoffs/stage-10b.md).
+Stage 10b notes: text is removed by splicing the original XML bytes, so namespace prefixes and every unedited byte stay the same; the editor can only delete or unwrap elements, drop attributes, and replace `w:t` text, so formatting-only redaction cannot be expressed. Outputs are stored as `<uuid>.docx`; the `redacted-<uuid>.docx` download name is applied in Stage 13, as for PDF. Like the PDF redactor, it took the `remove_hidden` flag until Stage 12 removed it (D-32). See [stage-handoffs/stage-10b.md](stage-handoffs/stage-10b.md).
 
 Acceptance: No decompressed part of the output contains a redacted string (raw byte search); source hash is unchanged; output opens with an independent OOXML parser; formatting-only redaction is impossible in the implementation.
 
@@ -236,6 +236,8 @@ Simplifications after Stage 10 (approved; these override the prompt above where 
 - D-32: remove the hidden-content review path: the Stage 6/6b extractors return the document plus alerts instead of a review, `ReviewKind.HIDDEN_CONTENT` and `hidden_content_approved` go (with a migration), the redactor is always called with removal on, and the alert kinds/counts are stored for status and the report.
 
 Per-document time budget (security review after Stage 9): every job gets a wall-clock limit (supported-pdf.md, "Per-document processing time") that ends in `JOB_TIMEOUT`. The limit must be enforced by terminating the worker process, not by a flag the job checks, because a running regex cannot be interrupted from another thread. Detection is near-linear on the known adversarial shapes (`tests/application/test_detect_timing.py`), but the limit is the backstop for shapes not yet found. For example, text with thousands of ID-shaped hits still costs time quadratic in the hit count inside Presidio's duplicate removal: about 1.4 s at 100k characters and 5 s at 200k. Tests: a detector stub that never returns ends in `JOB_TIMEOUT`, the worker is replaced, and no partial output survives. Because detection is deterministic, decide whether a `JOB_TIMEOUT` retry is useful or should become terminal after one attempt.
+
+Stage 12 notes: the queue is the persisted document states (next job: the oldest `UPLOADED` document of the oldest `RUNNING` batch); claiming is the optimistic `UPLOADED → VALIDATING` change, so duplicate delivery processes a document once. One `spawn` worker process runs validate, process, and verify for one document; the API process stores the output and writes every metadata change. The budget (120 s, `CV_MASKING_JOB_TIMEOUT_SECONDS`, cap 600 s) covers the three steps together and ends the process on expiry. `DETECT_FAILED` and `JOB_TIMEOUT` became terminal (D-41). See [stage-handoffs/stage-12.md](stage-handoffs/stage-12.md).
 
 ## Stage 13 — HR interface
 Goal: Deliver the minimal usable web UI.

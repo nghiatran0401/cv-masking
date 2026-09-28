@@ -7,8 +7,8 @@ Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retentio
 ## 1. System summary
 
 A single-user web app running on the HR user's bank-managed macOS laptop
-(Windows is a future stage and will need this model revisited). The browser UI talks to a FastAPI server on `127.0.0.1`. A local worker
-pool validates, detects, redacts, and independently verifies each CV (PDF or
+(Windows is a future stage and will need this model revisited). The browser UI talks to a FastAPI server on `127.0.0.1`. One local worker
+process (D-33) validates, detects, redacts, and independently verifies each CV (PDF or
 DOCX; each is redacted and verified in its own format). Files
 live in the project's `data/` folder (D-22); job metadata lives in SQLite at
 `data/metadata/jobs.sqlite3` (D-25). No component
@@ -63,7 +63,7 @@ flowchart LR
         subgraph TB2["TB-2: Local server process (127.0.0.1)"]
             API["FastAPI: Host/Origin/token checks"]
             SVC["Application services"]
-            Q["Bounded job queue"]
+            Q["Persisted job queue (SQLite states)"]
         end
         subgraph TB3["TB-3: Worker (untrusted-input parsing)"]
             VAL["Validate + extract (PDF or DOCX adapter)"]
@@ -103,8 +103,8 @@ flowchart LR
 |---|---|---|
 | TB-0 | Anything → network | No outbound code paths; no telemetry deps; tests block sockets (Stage 1+); no remote assets in build (Stage 15). |
 | TB-1 → TB-2 | Browser → API | Loopback bind; Host allowlist; Origin check; startup token + CSRF (Stage 14); size limits. |
-| TB-2 → TB-3 | API → parser of untrusted PDFs | Separate worker processes; page/size/decompression limits; timeouts; parser exceptions mapped to safe codes. |
-| TB-3 → TB-4 | Worker → disk | Random-UUID paths; containment; atomic writes; owner-only perms; cleanup in `finally`. |
+| TB-2 → TB-3 | API → parser of untrusted PDFs and DOCX | One separate worker process (multiprocessing `spawn`, same interpreter, anonymous pipe, no shell or socket); per-document time budget enforced by ending the process; replies are JSON rebuilt through domain constructors (never unpickled) with bounded sizes; page/size/decompression limits; parser exceptions mapped to safe codes (Stage 12). |
+| TB-3 → TB-4 | Worker → disk | The worker only reads stored inputs and outputs; the API process stores outputs and writes all metadata. Random-UUID paths; containment; atomic writes; owner-only perms. |
 | TB-2 → TB-1 | API → browser | Only COMPLETED outputs downloadable; status contains codes and counts only; `no-store` caching. |
 | TB-D | Developer ↔ Cursor | Synthetic data only; `data/` in `.cursorignore` and `.gitignore` and refused by the file guard; agents never read `data/`; human rule in SECURITY.md. Runtime files share the workspace (D-22, accepted risk). |
 
@@ -131,13 +131,13 @@ flowchart LR
 | T-16 | Tampering | Supply-chain compromise of a dependency. | Minimal deps; lockfiles with hashes; justification per dep; no install scripts where avoidable. | 1+ |
 | T-17 | Info disclosure | Developer pastes real CV into Cursor, or agent reads runtime data. | SECURITY.md rules; synthetic-only fixtures; `.cursorignore`; runtime root outside repo. | 0 |
 | T-18 | Repudiation | Unclear which policy/version produced an output. | Job records policy version, detector versions, software version. | 2, 4 |
-| T-19 | DoS | Batch of large files freezes laptop. | Bounded queue; 2 workers default; CPU work off the event loop. | 12 |
+| T-19 | DoS | Batch of large files, or one file that makes a parser or detector hang, freezes the laptop or the app. | One worker process, one document at a time (D-33); the queue is the persisted states, so it holds at most the batch limits; per-document time budget (120 s) ends the process, which is replaced for the next document; CPU work never runs on the API event loop. | 12 |
 | T-20 | Info disclosure | Browser caches masked or input PDFs. | `Cache-Control: no-store`; downloads served with attachment disposition. | 14 |
 | T-21 | Info disclosure | HR mistakes masked output for anonymous and shares widely. | UI + README state "masked, not anonymized"; report lists residual-risk notice. | 13, 16 |
 | T-22 | Info disclosure | Hidden-content alert itself leaks content (e.g. attachment name, comment text). | Alert payload limited to category, count, page numbers or part type. | 6, 6b, 13 |
 | T-23 | DoS / Elevation | Hostile DOCX archive: zip bomb, path traversal in entry names, XML entity expansion, external entity (XXE) reading local files. | In-memory reads with entry/size/ratio limits; entry-name validation; no extraction to disk; parser with DTDs, entities, and network disabled. | 6b, 14 |
-| T-24 | Info disclosure | PII survives in DOCX places a reader doesn't see: tracked-change deletions, comments, hidden text, text-box fallback copies, field codes, document properties, thumbnail, alt text, author lists. | Always-strip list + hidden-content review (supported-pdf.md §6); every copy redacted; verifier byte-searches every decompressed part. | 6b, 10b, 11b |
-| T-25 | Info disclosure | Masked DOCX contains external relationships (linked image, remote template) so Word fetches a URL when HR opens it, revealing that the CV was opened. | External relationships are hidden content, removed on approve; hyperlink targets always stripped; verifier checks none remain. | 6b, 10b, 11b |
+| T-24 | Info disclosure | PII survives in DOCX places a reader doesn't see: tracked-change deletions, comments, hidden text, text-box fallback copies, field codes, document properties, thumbnail, alt text, author lists. | Always-strip list + hidden content always removed (D-32, supported-pdf.md §6); every copy redacted; verifier byte-searches every decompressed part. | 6b, 10b, 11b |
+| T-25 | Info disclosure | Masked DOCX contains external relationships (linked image, remote template) so Word fetches a URL when HR opens it, revealing that the CV was opened. | External relationships are hidden content, always removed (D-32); hyperlink targets always stripped; verifier checks none remain. | 6b, 10b, 11b |
 | T-26 | Tampering | "Redaction" in DOCX done by formatting (black highlight, white text, hidden text) leaving text intact. | Text is removed from XML and replaced by the label; formatting-only redaction is impossible in the implementation. | 10b |
 
 ## 6. Residual risks (accepted for PoC, must be presented)

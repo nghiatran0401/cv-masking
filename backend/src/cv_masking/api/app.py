@@ -1,3 +1,7 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
@@ -22,6 +26,17 @@ from cv_masking.ports.storage import StorageError
 
 
 def create_app(runtime: Runtime | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        worker = runtime.worker if runtime is not None else None
+        if worker is not None:
+            await asyncio.to_thread(worker.start)
+        try:
+            yield
+        finally:
+            if worker is not None:
+                await asyncio.to_thread(worker.stop)
+
     # Interactive docs are disabled: FastAPI's Swagger UI and ReDoc pages load
     # scripts and styles from a public CDN, which the no-remote-assets rule forbids.
     app = FastAPI(
@@ -31,6 +46,7 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
         swagger_ui_oauth2_redirect_url=None,
+        lifespan=lifespan,
     )
     app.state.runtime = runtime
     app.add_exception_handler(RequestValidationError, validation_handler)

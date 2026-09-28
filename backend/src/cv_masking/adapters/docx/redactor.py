@@ -28,7 +28,7 @@ from cv_masking.adapters.docx.text import (
     walk_part,
 )
 from cv_masking.adapters.docx.xmledit import XmlEditError, XmlPart
-from cv_masking.domain.codes import ErrorCode, ReviewReason
+from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.findings import DocxRedactionRange
 from cv_masking.ports.redaction import RedactionResult
 
@@ -123,11 +123,9 @@ class _RedactionError(Exception):
 class DocxXmlRedactor:
     """Stateless; safe to share. Never logs or stores document text."""
 
-    def redact(
-        self, data: bytes, units: tuple[DocxRedactionRange, ...], *, remove_hidden: bool
-    ) -> RedactionResult:
+    def redact(self, data: bytes, units: tuple[DocxRedactionRange, ...]) -> RedactionResult:
         try:
-            output = _redact(data, units, remove_hidden=remove_hidden)
+            output = _redact(data, units)
         except _RedactionError as error:
             logger.info("docx redaction refused code=%s", error.code)
             return RedactionResult(failure=error.code)
@@ -138,14 +136,9 @@ class DocxXmlRedactor:
         return RedactionResult(output=output, labelled_regions=len(units))
 
 
-def _redact(data: bytes, ranges: tuple[DocxRedactionRange, ...], *, remove_hidden: bool) -> bytes:
-    checked = DocxExtractor().extract(data)
-    if checked.failure is not None:
+def _redact(data: bytes, ranges: tuple[DocxRedactionRange, ...]) -> bytes:
+    if DocxExtractor().extract(data).document is None:
         raise _RedactionError(ErrorCode.REDACT_FAILED)
-    if checked.review - {ReviewReason.DOCX_HIDDEN_CONTENT}:
-        raise _RedactionError(ErrorCode.REDACT_FAILED)
-    if checked.review and not remove_hidden:
-        raise _RedactionError(ErrorCode.REDACT_SANITIZE_FAILED)
     parts = read_docx_archive(data)
     by_part: dict[str, list[DocxRedactionRange]] = defaultdict(list)
     for item in ranges:
@@ -388,10 +381,10 @@ def _is_dropped_name(name: str) -> bool:
 def _check_output(output: bytes, expected: dict[str, str]) -> None:
     """Re-open the output: nothing hidden, the predicted text exactly, no stripped residue."""
     result = DocxExtractor().extract(output)
-    if ReviewReason.DOCX_HIDDEN_CONTENT in result.review:
-        raise _RedactionError(ErrorCode.REDACT_SANITIZE_FAILED)
     if result.document is None:
         raise _RedactionError(ErrorCode.REDACT_FAILED)
+    if result.document.hidden:
+        raise _RedactionError(ErrorCode.REDACT_SANITIZE_FAILED)
     actual = {part.part_name: part.text for part in result.document.parts}
     if actual != expected:
         raise _RedactionError(ErrorCode.REDACT_FAILED)

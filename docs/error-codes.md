@@ -28,23 +28,18 @@ stateDiagram-v2
     CREATED --> UPLOADED: mark_uploaded (stored + hashed)
     CREATED --> FAILED: reject_upload (UPLOAD_*, STORAGE_*, INTERNAL_ERROR)
     UPLOADED --> VALIDATING: start_validation
-    VALIDATING --> QUEUED: validation_passed
-    VALIDATING --> REVIEW_REQUIRED: validation_needs_review (blocking or hidden content)
-    VALIDATING --> FAILED: fail
-    REVIEW_REQUIRED --> QUEUED: approve_review (hidden content only)
+    VALIDATING --> QUEUED: validation_passed (hidden-content kinds and counts recorded)
+    VALIDATING --> REVIEW_REQUIRED: validation_needs_review (blocking only)
+    VALIDATING --> FAILED: fail, or interrupt (JOB_INTERRUPTED)
     QUEUED --> PROCESSING: start_processing (attempt + 1, policy recorded)
     PROCESSING --> VERIFYING: output_written
-    PROCESSING --> FAILED: fail
-    PROCESSING --> QUEUED: requeue_after_interruption (attempt < 3)
-    VERIFYING --> QUEUED: requeue_after_interruption (attempt < 3)
-    PROCESSING --> FAILED: requeue_after_interruption (attempt = 3, JOB_INTERRUPTED)
-    VERIFYING --> FAILED: requeue_after_interruption (attempt = 3, JOB_INTERRUPTED)
+    PROCESSING --> FAILED: fail, or interrupt (JOB_INTERRUPTED)
     VERIFYING --> COMPLETED: record_verification PASSED, no findings reasons
     VERIFYING --> REVIEW_REQUIRED: record_verification PASSED with findings reasons, or REVIEW_REQUIRED
-    VERIFYING --> FAILED: record_verification FAILED, or fail
+    VERIFYING --> FAILED: record_verification FAILED, fail, or interrupt (JOB_INTERRUPTED)
     REVIEW_REQUIRED --> COMPLETED: approve_review (findings only, verification PASSED)
     REVIEW_REQUIRED --> REJECTED: deny_review
-    note right of CREATED: cancel is allowed from every non-terminal state except REVIEW_REQUIRED
+    note right of CREATED: cancel is allowed from CREATED, UPLOADED, and QUEUED only
     COMPLETED --> [*]
     FAILED --> [*]
     REJECTED --> [*]
@@ -57,9 +52,15 @@ verification `PASSED` result: either directly, or when HR approves findings-only
 review reasons on an output that already passed. A verifier `REVIEW_REQUIRED`
 result can never be approved into `COMPLETED`; HR can only deny it.
 
-`cancel` moves any non-terminal state except `REVIEW_REQUIRED` (which uses
-deny) to `CANCELLED`, carrying `JOB_CANCELLED`. A job may be processed at most
-3 times (`MAX_PROCESSING_ATTEMPTS`).
+`cancel` moves a document that is still waiting (`CREATED`, `UPLOADED`, `QUEUED`)
+to `CANCELLED`, carrying `JOB_CANCELLED` (D-33). A document the worker holds
+(`VALIDATING`, `PROCESSING`, `VERIFYING`) cannot be cancelled; it settles on its
+own within the time budget. `REVIEW_REQUIRED` uses deny.
+
+`interrupt` fails a held document with `JOB_INTERRUPTED`. It is used at startup
+for documents a previous run left mid-processing, and at shutdown when the
+document in progress does not finish within the grace period (Stage 12). There is
+no automatic re-run: HR re-uploads the file.
 
 ### Review reasons
 
@@ -72,22 +73,18 @@ deny) to `CANCELLED`, carrying `JOB_CANCELLED`. A job may be processed at most
 | `DOCX_ENCRYPTED` | blocking | Delete only |
 | `DOCX_TOO_LARGE_TEXT` | blocking | Delete only |
 | `DOCX_NO_TEXT` | blocking | Delete only |
-| `PDF_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
-| `DOCX_HIDDEN_CONTENT` | hidden_content | Approve (content removed, processing continues) or deny |
 | `DETECT_LOW_CONFIDENCE` | findings | Approve the verified output, or deny |
 | `DETECT_NO_CANDIDATE_NAME` | findings | Check that the candidate's name is masked; approve the verified output, or deny |
 | `MAP_AMBIGUOUS` | findings | Approve the verified output, or deny |
 | `VERIFY_REVIEW` | verifier | Deny only |
 
-A job is approvable only when **all** its reasons are hidden_content, or
-**all** are findings (with verification PASSED). Any blocking or verifier reason
-makes the job deny-only.
+A job is approvable (keep → `COMPLETED`) only when **all** its reasons are
+findings and verification PASSED. Any blocking or verifier reason makes the job
+deny-only (delete → `REJECTED`, output deleted). D-29, D-34.
 
-**Planned change (D-32, D-34; implemented in Stage 12):** the two hidden_content
-reasons stop being review reasons. Hidden content is always removed and reported as
-an alert, so the `REVIEW_REQUIRED → QUEUED` transition goes away. Findings review
-becomes keep (approve → `COMPLETED`) or delete (deny → `REJECTED`). The diagram and
-this table are updated with the code in Stage 12.
+Hidden content is never a review reason (D-32). It is always removed; the
+categories and counts found are stored on the document (`document_hidden_content`)
+and shown to HR as an alert.
 
 Batch states: `OPEN` (accepting uploads; salary toggle editable) → `RUNNING`
 (toggle locked) → `FINISHED` (all documents terminal or `REVIEW_REQUIRED`).
@@ -118,8 +115,8 @@ input is deleted at a terminal state, so a retry is always a fresh upload.
 
 ### PDF validation and extraction (Stage 6)
 
-`PDF_HIDDEN_CONTENT` and `DOCX_HIDDEN_CONTENT` are the only approvable
-validation reasons.
+Every validation review reason is blocking. Hidden content is not a reason
+(D-32); see §2.
 
 | Code | R/T | Meaning |
 |---|---|---|
@@ -129,7 +126,6 @@ validation reasons.
 | `PDF_TOO_MANY_PAGES` | — | Exceeds page limit (blocking review). |
 | `PDF_NO_TEXT_LAYER` | — | At least one page is image-only (blocking review). |
 | `PDF_TEXT_UNRELIABLE` | — | Text cannot be reliably mapped to Unicode (blocking review). |
-| `PDF_HIDDEN_CONTENT` | — | Hidden content found; awaiting HR approve/deny. |
 | `PDF_RESOURCE_LIMIT` | T | Decompression or object-count limits exceeded. |
 
 ### DOCX validation and extraction (Stage 6b)
@@ -142,7 +138,6 @@ validation reasons.
 | `DOCX_RESOURCE_LIMIT` | T | Entry count, uncompressed size, or compression ratio exceeded. |
 | `DOCX_TOO_LARGE_TEXT` | — | Extracted text exceeds the length limit (blocking review). |
 | `DOCX_NO_TEXT` | — | No extractable text (blocking review). |
-| `DOCX_HIDDEN_CONTENT` | — | Hidden content found; awaiting HR approve/deny. |
 
 ### Detection and mapping (Stages 7–9)
 
@@ -150,7 +145,7 @@ validation reasons.
 |---|---|---|
 | `DETECT_LOW_CONFIDENCE` | — | One or more findings require review. |
 | `DETECT_NO_CANDIDATE_NAME` | — | No candidate name was detected; the name may be unmasked, review required. |
-| `DETECT_FAILED` | R | A detector raised an error. |
+| `DETECT_FAILED` | T | A detector raised an error. Detection is deterministic, so re-uploading the same file fails the same way (Stage 12). |
 | `MAP_AMBIGUOUS` | — | A finding's word overlaps another word drawn on top of it; all candidate boxes are redacted, review required. |
 | `MAP_FAILED` | T | Mapping raised an error, or a visible character of a finding has no source word box. Mapping is deterministic, so re-uploading fails the same way. |
 
@@ -185,9 +180,9 @@ broken or mismatched output.
 
 | Code | R/T | Meaning |
 |---|---|---|
-| `JOB_TIMEOUT` | R | Processing exceeded the time limit. |
+| `JOB_TIMEOUT` | T | Validation, processing, and verification together exceeded the per-document time budget (`CV_MASKING_JOB_TIMEOUT_SECONDS`, default 120 s); the worker process was replaced. The same file would take as long again. |
 | `JOB_CANCELLED` | T | Cancelled by HR. |
-| `JOB_INTERRUPTED` | R | App stopped during processing and the 3-attempt limit was reached. |
+| `JOB_INTERRUPTED` | R | The app stopped (or restarted) while this document was being processed. |
 | `STORAGE_WRITE_FAILED` | R | Local write failed (disk full, permissions). |
 | `STORAGE_PATH_REJECTED` | T | Path containment check failed. |
 | `STORAGE_INTEGRITY_FAILED` | T | Stored file hash does not match. |
@@ -197,10 +192,9 @@ broken or mismatched output.
 | `SECURITY_RATE_LIMITED` | R | Too many requests. |
 | `INTERNAL_ERROR` | R | Unexpected error; details not exposed. |
 
-Exception to D-06: automatic, bounded retries inside the worker (Stage 12, e.g.
-`JOB_INTERRUPTED` after a crash) happen *before* the document becomes terminal and reuse
-the retained input. Each attempt deletes any partial output first and produces a new
-output id.
+There are no automatic retries (D-33): a document runs once, and any partial
+output is deleted when it fails. A retry is always a fresh upload, which gets a new
+document id, input id, and output id.
 
 Blocking review reasons (`PDF_ENCRYPTED`, `PDF_TOO_MANY_PAGES`, `PDF_NO_TEXT_LAYER`,
 `PDF_TEXT_UNRELIABLE`, `DOCX_ENCRYPTED`, `DOCX_TOO_LARGE_TEXT`, `DOCX_NO_TEXT`) put the

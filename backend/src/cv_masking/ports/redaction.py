@@ -42,13 +42,11 @@ class RedactionResult:
 class DocumentRedactor[Unit](Protocol):
     """``Unit`` is what one format redacts: PDF regions or DOCX character ranges."""
 
-    def redact(
-        self, data: bytes, units: tuple[Unit, ...], *, remove_hidden: bool
-    ) -> RedactionResult:
+    def redact(self, data: bytes, units: tuple[Unit, ...]) -> RedactionResult:
         """Return new output bytes; ``data`` is never modified.
 
-        ``remove_hidden`` is True only after HR approved the hidden-content
-        alert. Without it, any hidden content fails with REDACT_SANITIZE_FAILED.
+        Every hidden-content category is always removed (D-32); content that
+        cannot be removed safely fails with REDACT_SANITIZE_FAILED.
         """
         ...
 

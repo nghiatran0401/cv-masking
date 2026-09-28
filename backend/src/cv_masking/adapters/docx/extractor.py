@@ -80,14 +80,13 @@ def _classify(parts: dict[str, bytes]) -> ExtractionResult:
         if total > MAX_DOCX_TEXT_CHARS:
             return ExtractionResult(review=frozenset({ReviewReason.DOCX_TOO_LARGE_TEXT}))
         extracted.append(part)
-    alerts = _alerts(hidden_parts, hidden_counts)
-    if alerts:
-        return ExtractionResult(review=frozenset({ReviewReason.DOCX_HIDDEN_CONTENT}), alerts=alerts)
     visible = sum(1 for part in extracted for char in part.text if not char.isspace())
     if visible < 1:
         return ExtractionResult(review=frozenset({ReviewReason.DOCX_NO_TEXT}))
     return ExtractionResult(
-        document=ExtractedDocument(DocumentFormat.DOCX, tuple(extracted), hidden=())
+        document=ExtractedDocument(
+            DocumentFormat.DOCX, tuple(extracted), hidden=_alerts(hidden_parts, hidden_counts)
+        )
     )
 
 

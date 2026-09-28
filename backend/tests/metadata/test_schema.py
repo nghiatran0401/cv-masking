@@ -8,6 +8,7 @@ from domain_builders import T0, findings_review, new_batch_id, rebuild, verifica
 from cv_masking.adapters.sqlite import SqliteMetadataStore
 from cv_masking.domain.batch import Batch
 from cv_masking.domain.codes import ErrorCode
+from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
 from cv_masking.domain.verification import VerificationOutcome
 
 EXPECTED_COLUMNS = {
@@ -36,7 +37,6 @@ EXPECTED_COLUMNS = {
         "attempt",
         "policy_mask_salary",
         "policy_version",
-        "hidden_content_approved",
         "findings_review_approved",
         "output_ref",
         "finding_counts_recorded",
@@ -49,6 +49,7 @@ EXPECTED_COLUMNS = {
     "document_finding_counts": {"document_id", "entity_type", "count"},
     "document_review_reasons": {"document_id", "reason"},
     "document_verification_failures": {"document_id", "code"},
+    "document_hidden_content": {"document_id", "category", "count"},
 }
 FREE_TEXT = "Synthetic Candidate Nguyễn Văn Mẫu, 12 Phố Giả, synthetic@example.invalid"
 
@@ -67,9 +68,10 @@ def _tables(raw: sqlite3.Connection) -> dict[str, list[tuple[str, str]]]:
 
 
 def _populate(store: SqliteMetadataStore) -> None:
-    """One row in every table: a review with reasons, and a failed verification."""
+    """One row in every table: a review with reasons and hidden content, a failed verification."""
     batch_id = new_batch_id()
-    review = rebuild(findings_review(), batch_id=batch_id)
+    hidden = HiddenContentCounts(((HiddenContentCategory.ANNOTATIONS, 2),))
+    review = rebuild(findings_review(), batch_id=batch_id, hidden_removed=hidden)
     job = verifying()
     failed = rebuild(
         job.record_verification(

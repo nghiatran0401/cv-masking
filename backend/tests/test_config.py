@@ -2,13 +2,18 @@ import pytest
 
 from cv_masking.config import (
     DEFAULT_PORT,
+    JOB_TIMEOUT_ENV_VAR,
     LOOPBACK_HOST,
     MAX_FILE_ENV_VAR,
     PORT_ENV_VAR,
     ConfigError,
     load_settings,
 )
-from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
+from cv_masking.domain.limits import (
+    DEFAULT_JOB_TIMEOUT_SECONDS,
+    HARD_MAX_FILE_BYTES,
+    HARD_MAX_JOB_TIMEOUT_SECONDS,
+)
 
 
 def test_host_is_loopback_and_cannot_be_overridden_by_environment() -> None:
@@ -34,3 +39,12 @@ def test_invalid_ports_are_rejected() -> None:
     for raw in ("0", "1023", "65536", "", " 8765", "87a5", "٨٧٦٥"):
         with pytest.raises(ConfigError):
             load_settings({PORT_ENV_VAR: raw})
+
+
+def test_job_timeout_defaults_and_cannot_exceed_the_hard_cap() -> None:
+    assert load_settings({}).job_timeout_seconds == DEFAULT_JOB_TIMEOUT_SECONDS == 120
+    assert load_settings({JOB_TIMEOUT_ENV_VAR: "30"}).job_timeout_seconds == 30
+    assert HARD_MAX_JOB_TIMEOUT_SECONDS == 600
+    for raw in ("0", str(HARD_MAX_JOB_TIMEOUT_SECONDS + 1), "", "1.5", "-5"):
+        with pytest.raises(ConfigError):
+            load_settings({JOB_TIMEOUT_ENV_VAR: raw})

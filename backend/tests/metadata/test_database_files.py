@@ -1,6 +1,7 @@
 import os
 import stat
 from pathlib import Path
+from typing import Any
 
 import pytest
 from domain_builders import T0, new_batch_id
@@ -39,3 +40,22 @@ def test_sweeper_never_touches_the_database(root: StorageRoot, store: SqliteMeta
     LocalStorageSweeper(root).sweep(T0.replace(year=T0.year + 5))
     with store.read() as reader:
         assert len(reader.list_batches()) == 1
+
+
+def test_a_side_file_unlinked_during_the_check_is_not_an_error(
+    root: StorageRoot, store: SqliteMetadataStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The API and the worker thread share the store: a closing connection removes -wal/-shm."""
+    side = root.metadata_path / f"{DATABASE_NAME}-wal"
+    os.close(os.open(side, os.O_CREAT | os.O_WRONLY, 0o600))
+    real_open = os.open
+
+    def racing_open(path: Any, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+        fd = real_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, str) and path.endswith("-wal"):
+            os.unlink(path, dir_fd=dir_fd)
+        return fd
+
+    monkeypatch.setattr(os, "open", racing_open)
+    with store.read() as reader:
+        assert reader.list_batches() == ()

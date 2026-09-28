@@ -2,8 +2,9 @@
 
 Status: Stage 0 baseline; file storage (§3) and the file sweeper (§5.3) implemented in
 Stage 3, with location and retention revised in the Stage 3 follow-up (D-22 to D-24).
-Stage 4 added the SQLite metadata store (D-25, D-26).
-Metadata follows in Stage 4, recovery in Stage 12, shutdown in Stage 15.
+Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker, its
+recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
+Uninstall follows in Stage 15.
 
 ## 1. Privacy assumptions
 
@@ -126,18 +127,21 @@ by file permissions (A-2, A-3).
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | Application log dir | 7 days, 10 MB cap, rotated (proposed). |
 | Original filenames (display only) | Browser tab memory | Tab closed or reloaded. |
-| Extracted text, detected values, decompressed DOCX parts | Worker process memory | End of the job; never written to disk by the app. |
+| Extracted text, detected values, decompressed DOCX parts | Worker process memory | Dropped when the document's verification ends, or when the worker process is ended (timeout, crash, shutdown); never written to disk by the app. |
 
 There is no age-based deletion of inputs or outputs (D-23). HR is responsible for deleting
 them; to erase everything by hand, quit the app and delete `<project>/data/`.
 
 ## 5. Cleanup triggers
 
-1. **Per job:** after every attempt, the worker deletes its work files in a `finally` path
-   that cannot be skipped by exceptions; cleanup failure is logged by code and retried by the sweeper.
+1. **Per job (Stage 12):** the worker process only reads stored files and returns the
+   redacted output as bytes; the API process stores it (temp file, then atomic rename).
+   A document that fails after its output was stored has the output deleted in the same
+   step. A worker ended mid-document (timeout, crash) therefore leaves no files; a temp
+   file left by a crash of the API process is removed by the sweeper.
 2. **Terminal state:** input copy deleted immediately.
 3. **Periodic sweeper:** every 10 minutes while running, removes crash leftovers. It exists
-   since Stage 3 (the schedule comes in Stage 12). It looks only inside `inputs/`,
+   since Stage 3 and is scheduled since Stage 12 (at startup, then every 10 minutes). It looks only inside `inputs/`,
    `outputs/` and `work/`, never follows symlinks, and removes by file age:
 
    | Entry | Removed after |
@@ -149,17 +153,22 @@ them; to erase everything by hand, quit the app and delete `<project>/data/`.
 
    Timestamps in the future are left alone. Each run logs only counts; a failure
    to remove an entry is counted and retried on the next run.
-4. **Startup:** runs the sweeper before accepting requests; documents found mid-processing are
-   recovered per Stage 12 (bounded retry) or failed with `JOB_INTERRUPTED`.
-5. **Reconcile (Stage 4 service, scheduled in Stage 12, D-26):** compares stored files with
+4. **Startup (Stage 12):** before accepting requests, documents a previous run left
+   mid-processing (`VALIDATING`, `PROCESSING`, `VERIFYING`) are failed with the retryable
+   `JOB_INTERRUPTED` (D-33; no automatic re-run, HR re-uploads), then the sweeper and
+   reconcile run. Documents still `UPLOADED` in a running batch simply wait in the queue.
+5. **Reconcile (Stage 4 service, scheduled in Stage 12 with the sweeper, D-26):** compares stored files with
    the metadata. It deletes an input or output that no document needs any more (for example
    when a deletion after a commit failed), and a file with no metadata row once it is older
    than 1 h (a younger one may be an upload still being recorded).
 6. **Batch purge:** deletes the batch's files first, then its rows; if a file cannot be
    deleted, the rows stay and the purge can be repeated.
 7. **HR "Clear all":** deletes every batch, file, and metadata row immediately.
-8. **Graceful shutdown:** deletes work files; in-flight jobs return to `QUEUED` for recovery.
-   Inputs, outputs, and metadata are kept (D-24).
+8. **Graceful shutdown (Stage 12):** the document in progress gets up to 10 seconds to
+   finish; otherwise the worker process is ended and the document fails with
+   `JOB_INTERRUPTED` (its input and any output are deleted as for any terminal state).
+   Waiting documents stay `UPLOADED` and are processed after the next start.
+   Inputs, outputs, and metadata are otherwise kept (D-24).
 9. **Uninstall (Stage 15):** documented steps remove the application root entirely.
 
 ## 6. Hash handling

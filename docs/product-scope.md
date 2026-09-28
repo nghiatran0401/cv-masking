@@ -29,7 +29,7 @@ laptop and produces permanently redacted copies.
 - Shared pipeline: each format is validated and extracted into one format-neutral text
   model; detection is shared; redaction and verification are format-specific and happen in
   the original format (D-15, D-16).
-- Batch processing: up to 50 files per batch (D-30), one job per document, bounded local worker pool.
+- Batch processing: up to 50 files per batch (D-30), one job per document, one local background worker process handling one document at a time (D-33).
 - Detection of the entity catalogue in [masking-policy.md](masking-policy.md).
 - Permanent redaction using PDF redaction APIs (redaction annotations + apply), never overlays.
 - Independent verification of every output before it can be `COMPLETED`.
@@ -107,6 +107,7 @@ laptop and produces permanently redacted copies.
 | D-38 | Downloads are named `redacted-<uuid>.pdf/.docx`; original file names (which often contain the candidate's name) are never used for outputs. The UI shows the original name next to each row from browser memory only. The ZIP holds one metadata-only CSV report: document id, status, error code, count per entity type, and hidden-content kinds/counts removed. No file names and no values. | Tech lead, after Stage 11 |
 | D-39 | Stage 15 launcher is a double-clickable `.command` script with a bundled Python environment, installed once by IT; no signing or notarization in the PoC. Before Stage 15 the tech lead confirms the PyMuPDF AGPL-3.0 licence with bank legal/IT. | Tech lead, after Stage 11 |
 | D-40 | Stage 16 evaluation uses a synthetic annotated set kept in the repository. Optionally, HR may later run the harness locally on authorized real CVs and share only the metadata report; real CVs never go through Cursor or any AI tool. | Tech lead, after Stage 11 |
+| D-41 | Stage 12 choices (proposed, for tech-lead confirmation): `DETECT_FAILED` and `JOB_TIMEOUT` are terminal (`T`), because detection is deterministic and a retry is a fresh upload that would fail the same way; the per-document budget is 120 s (configurable, cap 600 s) covering validation, processing, and verification; cancel applies to `CREATED`, `UPLOADED`, and `QUEUED`; at shutdown the document in progress gets 10 s, then fails with `JOB_INTERRUPTED`; documents a Stage 11 database held for hidden-content approval fail with `JOB_INTERRUPTED` on upgrade (migration 2). | Stage 12 (proposed) |
 
 ## 6. Known gaps between approved scope and the stage plan
 

@@ -75,12 +75,12 @@ def _classify(document: pymupdf.Document) -> ExtractionResult:
         part, page_block = _extract_page(page, number)
         blocking.update(page_block)
         parts.append(part)
-    found = alerts(hidden_pages, hidden_counts)
     if blocking:
-        return ExtractionResult(review=frozenset(blocking), alerts=found)
-    if found:
-        return ExtractionResult(review=frozenset({ReviewReason.PDF_HIDDEN_CONTENT}), alerts=found)
-    return ExtractionResult(document=ExtractedDocument(DocumentFormat.PDF, tuple(parts), hidden=()))
+        return ExtractionResult(review=frozenset(blocking))
+    found = alerts(hidden_pages, hidden_counts)
+    return ExtractionResult(
+        document=ExtractedDocument(DocumentFormat.PDF, tuple(parts), hidden=found)
+    )
 
 
 def _extract_page(page: pymupdf.Page, number: int) -> tuple[TextPart, set[ReviewReason]]:

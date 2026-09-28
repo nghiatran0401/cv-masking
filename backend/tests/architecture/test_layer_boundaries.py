@@ -66,3 +66,40 @@ def test_only_the_sqlite_adapter_imports_sqlite() -> None:
 def test_no_source_module_starts_subprocesses_or_opens_sockets() -> None:
     for path in SRC.rglob("*.py"):
         assert not _imports(path) & NETWORK_AND_PROCESS, path.name
+
+
+WORKER_PROCESS = SRC / "adapters" / "worker" / "process.py"
+_OS_PROCESS_CALLS = {"system", "popen", "fork", "forkpty", "posix_spawn", "posix_spawnp"}
+
+
+def test_only_the_worker_adapter_starts_a_process() -> None:
+    """One same-interpreter worker via multiprocessing spawn (D-33); nothing else runs programs."""
+    for path in SRC.rglob("*.py"):
+        uses = {m for m in _imports(path) if m.split(".")[0] in {"multiprocessing", "concurrent"}}
+        if path != WORKER_PROCESS:
+            assert not uses, (path.name, uses)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "os"
+            ):
+                forbidden = node.attr in _OS_PROCESS_CALLS or node.attr.startswith(
+                    ("exec", "spawn")
+                )
+                assert not forbidden, (path.name, node.attr)
+    assert "multiprocessing" in _imports(WORKER_PROCESS)
+
+
+def test_the_worker_process_only_hears_json_and_bytes() -> None:
+    """Replies are rebuilt from JSON; pickle-based send/recv is never used on the pipe."""
+    tree = ast.parse(WORKER_PROCESS.read_text(encoding="utf-8"), filename=WORKER_PROCESS.name)
+    calls = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert {"send_bytes", "recv_bytes"} <= calls
+    assert not calls & {"send", "recv"}
+    assert "pickle" not in _imports(WORKER_PROCESS)

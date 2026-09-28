@@ -18,6 +18,7 @@ from cv_masking.domain.document_job import DocumentJob, DocumentState
 from cv_masking.domain.errors import DomainError
 from cv_masking.domain.findings import FindingCounts
 from cv_masking.domain.formats import DocumentFormat
+from cv_masking.domain.hidden import HiddenContentCategory, HiddenContentCounts
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef, Sha256Digest
 from cv_masking.domain.policy import EntityType, MaskingPolicy
 from cv_masking.domain.verification import VerificationOutcome, VerificationResult
@@ -50,7 +51,6 @@ DOCUMENT_COLUMNS: Final = (
     "attempt",
     "policy_mask_salary",
     "policy_version",
-    "hidden_content_approved",
     "findings_review_approved",
     "output_ref",
     "finding_counts_recorded",
@@ -177,7 +177,6 @@ def document_params(job: DocumentJob) -> tuple[object, ...]:
         job.attempt,
         None if job.policy is None else int(job.policy.mask_salary),
         None if job.policy is None else job.policy.version,
-        int(job.hidden_content_approved),
         int(job.findings_review_approved),
         None if job.output_ref is None else str(job.output_ref),
         int(job.finding_counts is not None),
@@ -194,6 +193,13 @@ def finding_count_params(job: DocumentJob) -> list[tuple[str, str, int]]:
         return []
     return [
         (str(job.document_id), entity.value, count) for entity, count in job.finding_counts.items
+    ]
+
+
+def hidden_content_params(job: DocumentJob) -> list[tuple[str, str, int]]:
+    return [
+        (str(job.document_id), category.value, count)
+        for category, count in job.hidden_removed.items
     ]
 
 
@@ -226,6 +232,17 @@ def _finding_counts(row: Row, counts: list[Row]) -> FindingCounts | None:
     return FindingCounts.from_mapping(by_type)
 
 
+def _hidden_removed(hidden: list[Row]) -> HiddenContentCounts:
+    by_category = {
+        HiddenContentCategory(_text(item["category"])): _integer(item["count"]) for item in hidden
+    }
+    if len(by_category) != len(hidden):
+        raise ValueError("duplicate hidden-content count")
+    return HiddenContentCounts(
+        tuple((c, by_category[c]) for c in HiddenContentCategory if c in by_category)
+    )
+
+
 def _verification(row: Row, failures: list[Row]) -> VerificationResult | None:
     fields = ("verification_outcome", "verifier_id", "verifier_version", "verified_at")
     if all(row[name] is None for name in fields):
@@ -246,7 +263,7 @@ def _verification(row: Row, failures: list[Row]) -> VerificationResult | None:
 
 
 def document_from_rows(
-    row: Row, counts: list[Row], reasons: list[Row], failures: list[Row]
+    row: Row, counts: list[Row], reasons: list[Row], failures: list[Row], hidden: list[Row]
 ) -> DocumentJob:
     with decoding():
         size = row["size_bytes"]
@@ -267,7 +284,7 @@ def document_from_rows(
             uploaded_at=_optional_datetime(row["uploaded_at"]),
             attempt=_integer(row["attempt"]),
             policy=_policy(row),
-            hidden_content_approved=_flag(row["hidden_content_approved"]),
+            hidden_removed=_hidden_removed(hidden),
             findings_review_approved=_flag(row["findings_review_approved"]),
             output_ref=_optional_ref(row["output_ref"]),
             finding_counts=_finding_counts(row, counts),

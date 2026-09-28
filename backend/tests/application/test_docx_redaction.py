@@ -38,7 +38,7 @@ from cv_masking.adapters.docx import redactor as docx_redactor
 from cv_masking.adapters.docx.text import parse_xml
 from cv_masking.adapters.docx.xmledit import XmlPart
 from cv_masking.application import DetectionOutcome, DetectionService
-from cv_masking.domain.codes import ErrorCode, ReviewReason
+from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.findings import DocxRedactionRange
 from cv_masking.domain.ids import FindingId
 from cv_masking.domain.policy import EntityType, MaskingPolicy
@@ -65,10 +65,8 @@ def _ranges(policy: MaskingPolicy | None = None) -> tuple[DocxRedactionRange, ..
     return _detect(cv_docx(), policy).docx_ranges
 
 
-def _redact(
-    data: bytes, ranges: tuple[DocxRedactionRange, ...], *, remove_hidden: bool = False
-) -> bytes:
-    result = DocxXmlRedactor().redact(data, ranges, remove_hidden=remove_hidden)
+def _redact(data: bytes, ranges: tuple[DocxRedactionRange, ...]) -> bytes:
+    result = DocxXmlRedactor().redact(data, ranges)
     assert result.failure is None, result.failure
     assert result.output is not None
     return result.output
@@ -207,13 +205,14 @@ def test_always_stripped_items_are_removed_without_approval() -> None:
 
 
 @pytest.mark.parametrize("category", sorted(HIDDEN_BUILDERS))
-def test_each_hidden_category_is_removed_when_approved(category: str) -> None:
+def test_each_hidden_category_is_always_removed(category: str) -> None:
     data = with_hidden(category)
     classified = DocxExtractor().extract(data)
-    assert classified.review == {ReviewReason.DOCX_HIDDEN_CONTENT}, category
+    assert classified.document is not None, category
+    assert classified.document.hidden, category
     present = appears(HIDDEN, data)
     assert present, category
-    output = _redact(data, _ranges(), remove_hidden=True)
+    output = _redact(data, _ranges())
     leaked = appears(HIDDEN, output)
     assert not leaked, category
     reopened = DocxExtractor().extract(output)
@@ -226,7 +225,7 @@ def test_each_hidden_category_is_removed_when_approved(category: str) -> None:
 
 
 def test_all_hidden_categories_are_removed_together() -> None:
-    output = _redact(with_hidden(*HIDDEN_BUILDERS), _ranges(), remove_hidden=True)
+    output = _redact(with_hidden(*HIDDEN_BUILDERS), _ranges())
     leaked = appears(HIDDEN, output)
     assert not leaked
     parts = decompressed(output)
@@ -241,7 +240,7 @@ def test_all_hidden_categories_are_removed_together() -> None:
 
 
 def test_tracked_changes_are_accepted() -> None:
-    output = _redact(with_hidden("tracked_changes"), _ranges(), remove_hidden=True)
+    output = _redact(with_hidden("tracked_changes"), _ranges())
     assert "Inserted line" in _text(output)
     document = decompressed(output)[_DOCUMENT]
     assert b"<w:ins" not in document
@@ -249,10 +248,12 @@ def test_tracked_changes_are_accepted() -> None:
 
 
 @pytest.mark.parametrize("category", sorted(HIDDEN_BUILDERS))
-def test_hidden_content_without_approval_is_refused(category: str) -> None:
-    result = DocxXmlRedactor().redact(with_hidden(category), _ranges(), remove_hidden=False)
-    assert result.failure is ErrorCode.REDACT_SANITIZE_FAILED, category
-    assert result.output is None
+def test_ranges_detected_on_a_document_with_hidden_content_redact_it(category: str) -> None:
+    data = with_hidden(category)
+    output = _redact(data, _detect(data).docx_ranges)
+    leaked = appears(HIDDEN, output) or any(appears(piece, output) for piece in _NAME_PIECES)
+    assert not leaked, category
+    assert "[NAME]" in _text(output), category
 
 
 def test_input_bytes_are_never_modified() -> None:
@@ -268,7 +269,7 @@ def test_input_bytes_are_never_modified() -> None:
     ids=["empty", "garbage", "encrypted"],
 )
 def test_unreadable_input_fails_closed(data: bytes) -> None:
-    result = DocxXmlRedactor().redact(data, (), remove_hidden=True)
+    result = DocxXmlRedactor().redact(data, ())
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
@@ -278,7 +279,7 @@ def test_unreadable_input_fails_closed(data: bytes) -> None:
     ids=["missing-part", "not-a-text-part", "past-the-end"],
 )
 def test_a_range_that_cannot_be_placed_fails(unit: DocxRedactionRange) -> None:
-    result = DocxXmlRedactor().redact(cv_docx(), (unit,), remove_hidden=False)
+    result = DocxXmlRedactor().redact(cv_docx(), (unit,))
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
@@ -303,13 +304,13 @@ def test_a_utf16_part_fails_closed() -> None:
         .replace('encoding="UTF-8"', 'encoding="UTF-16"')
         .encode("utf-16")
     )
-    result = DocxXmlRedactor().redact(pack(parts), _ranges(), remove_hidden=False)
+    result = DocxXmlRedactor().redact(pack(parts), _ranges())
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
 def test_text_left_in_place_fails_the_output_check(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(XmlPart, "set_text", lambda self, element, text: None)
-    result = DocxXmlRedactor().redact(cv_docx(), _ranges(), remove_hidden=False)
+    result = DocxXmlRedactor().redact(cv_docx(), _ranges())
     assert result.failure is ErrorCode.REDACT_FAILED
 
 
@@ -318,13 +319,13 @@ def test_skipped_stripping_fails_the_output_check(monkeypatch: pytest.MonkeyPatc
         del part, text_part
 
     monkeypatch.setattr(docx_redactor, "_strip_part", keep)
-    result = DocxXmlRedactor().redact(cv_docx(), _ranges(), remove_hidden=False)
+    result = DocxXmlRedactor().redact(cv_docx(), _ranges())
     assert result.failure is ErrorCode.REDACT_SANITIZE_FAILED
 
 
 def test_redaction_logs_nothing_from_the_document(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.DEBUG, logger="cv_masking"):
-        _redact(with_hidden(*HIDDEN_BUILDERS), _ranges(), remove_hidden=True)
+        _redact(with_hidden(*HIDDEN_BUILDERS), _ranges())
     logged = " ".join(record.getMessage() for record in caplog.records)
     for index, value in enumerate((*_NAME_PIECES, EMAIL, PHONE, SALARY, AUTHOR, HIDDEN)):
         found = value in logged

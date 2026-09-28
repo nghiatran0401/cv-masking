@@ -65,7 +65,7 @@ def test_failed_verification_deletes_the_output(
     assert _objects(root, "inputs") == []
 
 
-def test_requeue_deletes_the_abandoned_output(
+def test_interrupt_deletes_the_abandoned_output_and_input(
     service: JobService,
     input_store: LocalInputStore,
     output_store: LocalOutputStore,
@@ -73,9 +73,9 @@ def test_requeue_deletes_the_abandoned_output(
 ) -> None:
     batch = service.create_batch()
     job = verifying_document(service, input_store, output_store, batch.batch_id)
-    service.apply(job.document_id, lambda j, at: j.requeue_after_interruption(at))
+    service.apply(job.document_id, lambda j, at: j.interrupt(at))
     assert _objects(root, "outputs") == []
-    assert len(_objects(root, "inputs")) == 1
+    assert _objects(root, "inputs") == []
 
 
 def test_file_deletion_failure_after_commit_is_left_to_reconcile(

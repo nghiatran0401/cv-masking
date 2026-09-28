@@ -2,7 +2,6 @@ import logging
 from collections.abc import Callable
 
 import pytest
-from service_helpers import uploaded_document
 from synthetic_files import SYNTHETIC_PDF, synthetic_docx
 
 # Load pymupdf via this helper first. Importing it from a pytest-rewritten
@@ -21,15 +20,16 @@ from synthetic_pdfs import (
     supported_layouts_pdf,
 )
 
-from cv_masking.adapters.docx import DocxExtractor
-from cv_masking.adapters.local_storage import LocalInputStore
+from cv_masking.adapters.local_storage import LocalInputStore, StorageRoot
 from cv_masking.adapters.pdf import PyMuPDFExtractor
-from cv_masking.application import JobService, ValidationService
+from cv_masking.api.runtime import build_pipeline
+from cv_masking.application import DocumentPipeline
 from cv_masking.domain.codes import ErrorCode, ReviewReason
-from cv_masking.domain.document_job import DocumentState
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.hidden import HiddenContentCategory
+from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
 from cv_masking.ports.extraction import ExtractionResult
+from cv_masking.ports.storage import StoredObject
 
 
 @pytest.fixture
@@ -38,14 +38,8 @@ def extractor() -> PyMuPDFExtractor:
 
 
 @pytest.fixture
-def validation(
-    service: JobService, input_store: LocalInputStore, extractor: PyMuPDFExtractor
-) -> ValidationService:
-    return ValidationService(
-        service,
-        input_store,
-        {DocumentFormat.PDF: extractor, DocumentFormat.DOCX: DocxExtractor()},
-    )
+def pipeline(root: StorageRoot) -> DocumentPipeline:
+    return build_pipeline(root.path)
 
 
 def _combined(result: ExtractionResult) -> str:
@@ -99,59 +93,57 @@ def test_classifies_unsupported_pdfs(
     assert result.review == (frozenset({review}) if review is not None else frozenset())
 
 
-def test_hidden_content_holds_the_document_without_leaking_text(
-    service: JobService, input_store: LocalInputStore, validation: ValidationService
+def _source(input_store: LocalInputStore, data: bytes, fmt: DocumentFormat) -> StoredObject:
+    return input_store.save_stream(fmt, [data], max_bytes=HARD_MAX_FILE_BYTES)
+
+
+def test_hidden_content_is_reported_by_kind_and_count_only(
+    input_store: LocalInputStore, pipeline: DocumentPipeline
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(service, input_store, batch.batch_id, content=hidden_content_pdf())
-    outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.REVIEW_REQUIRED
-    assert outcome.job.review_reasons == frozenset({ReviewReason.PDF_HIDDEN_CONTENT})
-    kinds = {alert.category for alert in outcome.alerts}
-    assert HiddenContentCategory.ANNOTATIONS in kinds
-    assert HiddenContentCategory.EMBEDDED_FILES in kinds
-    dumped = repr(outcome.alerts)
+    report = pipeline.validate(_source(input_store, hidden_content_pdf(), DocumentFormat.PDF))
+    assert report.passed
+    kinds = report.hidden_removed.as_dict()
+    assert kinds[HiddenContentCategory.ANNOTATIONS] >= 1
+    assert kinds[HiddenContentCategory.EMBEDDED_FILES] >= 1
+    dumped = repr(report)
     for fragment in ("Nguyen", "secret", "never leak", "app.alert"):
         assert fragment not in dumped
 
 
-def test_validate_queues_a_supported_pdf_without_logging_text(
-    service: JobService,
+def test_validate_passes_a_supported_pdf_without_logging_text(
     input_store: LocalInputStore,
-    validation: ValidationService,
+    pipeline: DocumentPipeline,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(service, input_store, batch.batch_id, content=supported_layouts_pdf())
+    source = _source(input_store, supported_layouts_pdf(), DocumentFormat.PDF)
     with caplog.at_level(logging.DEBUG, logger="cv_masking"):
-        outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.QUEUED
-    assert outcome.extracted is not None
-    assert EMAIL in "\n".join(part.text for part in outcome.extracted.parts)
+        report = pipeline.validate(source)
+    assert report.passed
+    assert report.hidden_removed.items == ()
     combined = " ".join(record.getMessage() for record in caplog.records)
     for fragment in ("Nguyen", EMAIL, "Mau"):
         assert fragment not in combined
 
 
 def test_validate_fails_a_malformed_pdf(
-    service: JobService, input_store: LocalInputStore, validation: ValidationService
+    input_store: LocalInputStore, pipeline: DocumentPipeline
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(service, input_store, batch.batch_id, content=SYNTHETIC_PDF)
-    outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.FAILED
-    assert outcome.job.error_code is ErrorCode.PDF_MALFORMED
-    assert outcome.extracted is None
+    report = pipeline.validate(_source(input_store, SYNTHETIC_PDF, DocumentFormat.PDF))
+    assert report.failure is ErrorCode.PDF_MALFORMED
 
 
-def test_validate_queues_a_simple_docx(
-    service: JobService, input_store: LocalInputStore, validation: ValidationService
+def test_validate_passes_a_simple_docx(
+    input_store: LocalInputStore, pipeline: DocumentPipeline
 ) -> None:
-    batch = service.create_batch()
-    job = uploaded_document(
-        service, input_store, batch.batch_id, DocumentFormat.DOCX, synthetic_docx()
-    )
-    outcome = validation.validate(job.document_id)
-    assert outcome.job.state is DocumentState.QUEUED
-    assert outcome.extracted is not None
-    assert "synthetic" in "\n".join(part.text for part in outcome.extracted.parts)
+    report = pipeline.validate(_source(input_store, synthetic_docx(), DocumentFormat.DOCX))
+    assert report.passed
+
+
+def test_validate_reports_a_tampered_input(
+    input_store: LocalInputStore, pipeline: DocumentPipeline, root: StorageRoot
+) -> None:
+    source = _source(input_store, supported_layouts_pdf(), DocumentFormat.PDF)
+    path = root.path / "inputs" / f"{source.ref.value}.pdf"
+    path.chmod(0o600)
+    path.write_bytes(SYNTHETIC_PDF)
+    assert pipeline.validate(source).failure is ErrorCode.STORAGE_INTEGRITY_FAILED

@@ -84,11 +84,9 @@ class _RedactionError(Exception):
 
 
 class PyMuPDFRedactor:
-    """Redacts regions, strips always-removed metadata, and removes approved hidden content."""
+    """Redacts regions, strips always-removed metadata, and removes all hidden content."""
 
-    def redact(
-        self, data: bytes, regions: tuple[RedactionRegion, ...], *, remove_hidden: bool
-    ) -> RedactionResult:
+    def redact(self, data: bytes, regions: tuple[RedactionRegion, ...]) -> RedactionResult:
         if not data:
             return RedactionResult(failure=ErrorCode.REDACT_FAILED)
         silence_mupdf()
@@ -97,7 +95,7 @@ class PyMuPDFRedactor:
         except _ERRORS:
             return RedactionResult(failure=ErrorCode.REDACT_FAILED)
         try:
-            return _redact(document, regions, remove_hidden=remove_hidden)
+            return _redact(document, regions)
         except _RedactionError as failure:
             return RedactionResult(failure=failure.code)
         except _ERRORS:
@@ -106,9 +104,7 @@ class PyMuPDFRedactor:
             document.close()
 
 
-def _redact(
-    document: pymupdf.Document, regions: tuple[RedactionRegion, ...], *, remove_hidden: bool
-) -> RedactionResult:
+def _redact(document: pymupdf.Document, regions: tuple[RedactionRegion, ...]) -> RedactionResult:
     pages = document.page_count
     if (
         bool(getattr(document, "is_encrypted", False))
@@ -119,8 +115,6 @@ def _redact(
     ):
         raise _RedactionError(ErrorCode.REDACT_FAILED)
     found = {alert.category for alert in scan_hidden(document)}
-    if found and not remove_hidden:
-        raise _RedactionError(ErrorCode.REDACT_SANITIZE_FAILED)
     hidden_boxes = _sanitize(document, found)
     by_page: dict[int, list[RedactionRegion]] = defaultdict(list)
     for region in regions:
@@ -145,7 +139,7 @@ def _redact(
 def _sanitize(
     document: pymupdf.Document, found: set[HiddenContentCategory]
 ) -> dict[int, tuple[pymupdf.Rect, ...]]:
-    """Remove approved hidden content and always-stripped components.
+    """Remove all hidden content and always-stripped components.
 
     Returns the invisible-text boxes per page index; they are removed by the
     same ``apply_redactions`` call as the regions.
