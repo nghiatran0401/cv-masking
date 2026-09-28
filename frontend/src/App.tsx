@@ -11,6 +11,7 @@ import {
   ApiRequestError,
   approveDocument,
   cancelDocument,
+  consumeBootstrapQuery,
   createBatch,
   denyDocument,
   downloadFile,
@@ -100,7 +101,10 @@ export function App() {
   }, [language, t.title]);
 
   useEffect(() => {
-    void openSession().catch((error: unknown) => {
+    const bootstrap = consumeBootstrapQuery(window.location.search, (path) => {
+      window.history.replaceState(null, "", path);
+    });
+    void openSession(bootstrap).catch((error: unknown) => {
       setNotice(
         error instanceof ApiRequestError
           ? messageForCode(loadLanguage(), error.code)

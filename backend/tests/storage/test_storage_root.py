@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cv_masking.adapters.local_storage import (
+    LOCK_DIR,
     LOGS_DIR,
     METADATA_DIR,
     StorageRoot,
@@ -38,7 +39,7 @@ def test_default_root_is_the_ignored_project_data_folder() -> None:
 
 def test_prepare_creates_an_owner_only_layout(tmp_path: Path) -> None:
     root = StorageRoot.prepare(tmp_path / "data")
-    directories = (*(kind.value for kind in StoreKind), METADATA_DIR, LOGS_DIR)
+    directories = (*(kind.value for kind in StoreKind), METADATA_DIR, LOGS_DIR, LOCK_DIR)
     assert _mode(root.path) == 0o700
     for directory in directories:
         assert _mode(root.path / directory) == 0o700

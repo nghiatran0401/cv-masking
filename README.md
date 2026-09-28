@@ -4,9 +4,10 @@ A localhost-only tool for bank HR staff that batch-detects and permanently
 redacts personal and sensitive information from CVs (PDF and Word DOCX) on their own macOS
 laptop (Windows support is a later stage). CVs are never sent to any network service.
 
-> **Status:** Stage 14 — loopback Host/Origin checks, a startup session and CSRF
-> token, security headers, rate and size limits, and metadata-only logs. See
-> [docs/stage-plan.md](docs/stage-plan.md).
+> **Status:** Stage 15 — FastAPI serves the built UI on loopback; an unsigned
+> macOS `.command` launcher starts one instance, waits for health, and opens
+> the browser with a one-time bootstrap token. See
+> [docs/stage-plan.md](docs/stage-plan.md) and [docs/install.md](docs/install.md).
 
 ## Development (macOS)
 
@@ -16,13 +17,17 @@ Node.js ≥ 24 with npm, and GNU Make.
 ```bash
 uv python install 3.12   # one-time
 make install             # locked dependencies, Playwright Chromium, pre-commit file guard
+make build               # production UI into the Python package
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
-make check               # file guard + lint + type-check + tests (quality gate)
+make check               # file guard + lint + type-check + UI build + tests (quality gate)
 ```
 
-Open <http://127.0.0.1:5173>. Both servers bind to `127.0.0.1` only; the backend
-host cannot be changed. Set `CV_MASKING_PORT` to change the backend port (the Vite
-proxy expects 8765).
+Open <http://127.0.0.1:5173> for development. HR double-clicks
+`scripts/cv-masking.command` (see [docs/install.md](docs/install.md)); that
+serves the UI from <http://127.0.0.1:8765> and does not start Node.
+
+Both servers bind to `127.0.0.1` only; the backend host cannot be changed. Set
+`CV_MASKING_PORT` to change the backend port (the Vite proxy expects 8765).
 
 ## What it does (target)
 
@@ -57,4 +62,5 @@ proxy expects 8765).
 | [docs/data-retention.md](docs/data-retention.md) | Privacy assumptions, retention, cleanup |
 | [docs/error-codes.md](docs/error-codes.md) | Safe error codes and document states |
 | [docs/stage-plan.md](docs/stage-plan.md) | Implementation stages |
+| [docs/install.md](docs/install.md) | macOS install, run, uninstall (Stage 15) |
 | [docs/stage-handoffs/](docs/stage-handoffs/) | Per-stage handoff reports |

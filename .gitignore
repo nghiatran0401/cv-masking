@@ -130,6 +130,9 @@ playwright/.cache/
 *.tsbuildinfo
 npm-debug.log*
 
+# Packaged Vite build (make build). Source stays in frontend/.
+backend/src/cv_masking/static/
+
 # ---------------------------------------------------------------------------
 # OS / editor
 # ---------------------------------------------------------------------------

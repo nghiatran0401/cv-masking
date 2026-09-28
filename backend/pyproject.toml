@@ -49,6 +49,8 @@ select = [
 "tests/**" = ["S101"]
 # Storage must use dir_fd/O_NOFOLLOW calls, which pathlib does not offer.
 "src/cv_masking/adapters/local_storage/**" = ["PTH"]
+# Desktop flock needs a raw fd; /usr/bin/open is argv-only to a validated loopback URL.
+"src/cv_masking/desktop.py" = ["PTH", "S404", "S603"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -48,6 +48,8 @@ METADATA_DIR: Final = "metadata"
 """Holds the SQLite database. Not a StoreKind, so the sweeper never looks inside."""
 LOGS_DIR: Final = "logs"
 """Rotated application logs (IDs and codes only). Not swept."""
+LOCK_DIR: Final = "lock"
+"""Single-instance lock. Not swept."""
 
 
 _PROJECT_ROOT: Final = Path(__file__).resolve().parents[5]
@@ -128,7 +130,7 @@ class StorageRoot:
                 _require_owned_dir(root_fd, tighten=True)
                 cls._claim(root_fd, created=created)
                 _create_marker(root_fd, SPOTLIGHT_MARKER)
-                for directory in (*StoreKind, METADATA_DIR, LOGS_DIR):
+                for directory in (*StoreKind, METADATA_DIR, LOGS_DIR, LOCK_DIR):
                     cls._prepare_directory(root_fd, directory)
             finally:
                 os.close(root_fd)

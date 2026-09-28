@@ -20,6 +20,10 @@ def open_session(request: Request) -> JSONResponse:
     session = getattr(request.app.state, "session", None)
     if not isinstance(session, SessionState):
         raise ApiError(ErrorCode.INTERNAL_ERROR, 500)
+    cookie = request.cookies.get(SESSION_COOKIE)
+    bootstrap = request.query_params.get("bootstrap")
+    if not session.bootstrap.allow(bootstrap, cookie, session.session_token):
+        raise ApiError(ErrorCode.SECURITY_TOKEN_INVALID, 403)
     response = JSONResponse(SessionResponse(csrf_token=session.csrf_token).model_dump())
     response.set_cookie(
         SESSION_COOKIE,

@@ -1,9 +1,10 @@
 # Threat model
 
-Status: Stage 14 controls (Host/Origin, session, CSRF, headers, rate limit, metadata
-logging) are in the API. Revisit at Stage 15 for the launcher bootstrap token.
-Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
-[docs/masking-policy.md](docs/masking-policy.md), [docs/supported-pdf.md](docs/supported-pdf.md).
+Status: Stage 15 controls (built UI served from FastAPI, unsigned `.command`
+launcher, one-time bootstrap token). PyMuPDF AGPL remains a residual until
+legal confirms. Related: [SECURITY.md](SECURITY.md), [docs/data-retention.md](docs/data-retention.md),
+[docs/masking-policy.md](docs/masking-policy.md), [docs/supported-pdf.md](docs/supported-pdf.md),
+[docs/install.md](docs/install.md).
 
 ## 1. System summary
 
@@ -164,3 +165,8 @@ flowchart LR
 14. The metadata database keeps each input's SHA-256 until its batch is purged. A hash can
     confirm that a known file was processed. `secure_delete` zeroes purged rows in the live
     file, but APFS snapshots or backups taken earlier may still hold them.
+15. The macOS launcher is unsigned and not notarized (D-39). Gatekeeper will warn.
+16. PyMuPDF is AGPL-3.0 or commercial. This PoC does not settle the licence path.
+17. The first browser URL contains a one-time bootstrap token. Referrer is `no-referrer`;
+    the page strips the query. Browser history may still keep that first URL until the
+    token is consumed.

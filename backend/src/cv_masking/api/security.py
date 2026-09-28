@@ -6,6 +6,7 @@ import hmac
 import secrets
 from collections import deque
 from dataclasses import dataclass
+from threading import Lock
 from time import monotonic
 from typing import Final
 
@@ -13,6 +14,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from cv_masking.api.errors import error_response
+from cv_masking.api.ui import is_public_ui_path
 from cv_masking.config import DEFAULT_PORT, LOOPBACK_HOST, Settings
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
@@ -45,14 +47,45 @@ _SECURITY_HEADERS: Final = (
 _MUTATING: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
+class BootstrapGate:
+    """One-time launcher token. Dev/tests omit it and ``GET /api/session`` stays open."""
+
+    __slots__ = ("_lock", "_token", "_used")
+
+    def __init__(self, token: str | None) -> None:
+        self._token = token
+        self._used = False
+        self._lock = Lock()
+
+    def allow(self, given: str | None, cookie: str | None, session_token: str) -> bool:
+        if self._token is None:
+            return True
+        if cookie is not None and _same_secret(cookie, session_token):
+            return True
+        if given is None:
+            return False
+        with self._lock:
+            if self._used:
+                return False
+            if not _same_secret(given, self._token):
+                return False
+            self._used = True
+            return True
+
+
 @dataclass(frozen=True, slots=True)
 class SessionState:
     session_token: str
     csrf_token: str
+    bootstrap: BootstrapGate
 
     @staticmethod
-    def new() -> SessionState:
-        return SessionState(secrets.token_urlsafe(32), secrets.token_urlsafe(32))
+    def new(*, bootstrap_token: str | None = None) -> SessionState:
+        return SessionState(
+            secrets.token_urlsafe(32),
+            secrets.token_urlsafe(32),
+            BootstrapGate(bootstrap_token),
+        )
 
 
 def allowed_hosts(settings: Settings) -> frozenset[str]:
@@ -155,6 +188,8 @@ class SecurityGate:
         if path == HEALTH_PATH and method == "GET":
             return None
         if path == SESSION_PATH and method == "GET":
+            return None
+        if is_public_ui_path(method, path):
             return None
         if method in _MUTATING and origin is None:
             return ErrorCode.SECURITY_ORIGIN_REJECTED, 403

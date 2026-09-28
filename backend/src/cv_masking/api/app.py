@@ -1,6 +1,8 @@
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -26,17 +28,23 @@ from cv_masking.api.health import router as health_router
 from cv_masking.api.runtime import Runtime, build_runtime
 from cv_masking.api.security import RateLimiter, SecurityGate, SessionState
 from cv_masking.api.session import router as session_router
+from cv_masking.api.ui import register_ui, resolve_static_directory
 from cv_masking.application.uploads import UploadError
-from cv_masking.config import Settings
+from cv_masking.config import BOOTSTRAP_ENV_VAR, Settings
 from cv_masking.domain.errors import InvalidTransitionError
 from cv_masking.logging_setup import configure_file_logging, install_metadata_filter
 from cv_masking.ports.metadata import ConcurrentUpdateError, RecordNotFoundError
 from cv_masking.ports.storage import StorageError
 
 
-def create_app(runtime: Runtime | None = None) -> FastAPI:
+def create_app(
+    runtime: Runtime | None = None,
+    *,
+    static_directory: Path | None = None,
+    bootstrap_token: str | None = None,
+) -> FastAPI:
     install_metadata_filter()
-    session = SessionState.new()
+    session = SessionState.new(bootstrap_token=bootstrap_token)
     settings = runtime.settings if runtime is not None else Settings()
     limiter = RateLimiter()
 
@@ -79,6 +87,8 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(session_router)
     app.include_router(batches_router)
+    if static_directory is not None:
+        register_ui(app, static_directory)
     return app
 
 
@@ -86,4 +96,10 @@ def create_runtime_app() -> FastAPI:
     """Production factory: opens the local data/ folder. Tests must not call this."""
     runtime = build_runtime()
     configure_file_logging(default_storage_root() / LOGS_DIR)
-    return create_app(runtime)
+    token = os.environ.get(BOOTSTRAP_ENV_VAR)
+    bootstrap = token if token else None
+    return create_app(
+        runtime,
+        static_directory=resolve_static_directory(),
+        bootstrap_token=bootstrap,
+    )

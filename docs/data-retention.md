@@ -6,7 +6,8 @@ Stage 4 added the SQLite metadata store (D-25, D-26). Stage 12 added the worker,
 recovery and shutdown behaviour, and the sweeper/reconcile schedule (§5, D-33).
 Stage 13 streams individual downloads and writes the ZIP export in a work directory
 that is deleted when the response finishes. Stage 14 writes metadata-only logs under
-`data/logs/`. Uninstall follows in Stage 15.
+`data/logs/`. Stage 15 adds `data/lock/` for the desktop instance lock. Uninstall is
+documented in [install.md](install.md).
 
 ## 1. Privacy assumptions
 
@@ -61,6 +62,8 @@ File layout (Stages 3 and 4):
   work/<uuid4>/                      0700 one directory per upload or processing attempt
   logs/                              0700 rotated application logs (IDs and codes only)
     app.log                          0600
+  lock/                              0700 single-instance lock
+    instance.lock                    0600 pid; flock exclusive
   metadata/                          0700 never swept
     jobs.sqlite3 (+ -wal, -shm)      0600 job metadata (no document content)
 ```
@@ -173,7 +176,10 @@ them; to erase everything by hand, quit the app and delete `<project>/data/`.
    `JOB_INTERRUPTED` (its input and any output are deleted as for any terminal state).
    Waiting documents stay `UPLOADED` and are processed after the next start.
    Inputs, outputs, and metadata are otherwise kept (D-24).
-9. **Uninstall (Stage 15):** documented steps remove the application root entirely.
+9. **Uninstall (Stage 15):** quit the `.command` (or Ctrl+C), then delete the project
+   folder. That removes the program, `.venv`, and `data/` (including inputs, outputs,
+   metadata, logs, and the instance lock). This is not forensic erasure (A-1). Downloads
+   of masked files are not removed. See [install.md](install.md).
 
 ## 6. Hash handling
 

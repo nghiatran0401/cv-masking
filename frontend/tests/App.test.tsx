@@ -14,7 +14,7 @@ beforeEach(() => {
     "fetch",
     vi.fn((input: RequestInfo | URL) => {
       const url = requestUrl(input);
-      if (url.endsWith("/api/session")) {
+      if (url.includes("/api/session")) {
         return json({ csrf_token: "test-csrf" });
       }
       throw new Error(`unexpected ${url}`);
@@ -62,7 +62,7 @@ describe("App", () => {
   it("keeps file names in the table after a mocked upload", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.endsWith("/api/session")) {
+      if (url.includes("/api/session")) {
         return json({ csrf_token: "test-csrf" });
       }
       if (url === "/api/batches" && init?.method === "POST") {
@@ -154,7 +154,7 @@ describe("App", () => {
     const failedId = "00000000-0000-4000-8000-0000000000d2";
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.endsWith("/api/session")) {
+      if (url.includes("/api/session")) {
         return json({ csrf_token: "test-csrf" });
       }
       if (url === "/api/batches" && init?.method === "POST") {

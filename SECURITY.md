@@ -24,6 +24,10 @@ with [AGENTS.md](AGENTS.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 - Errors cross boundaries only as codes from [docs/error-codes.md](docs/error-codes.md).
 - The API accepts only loopback `Host` values, loopback `Origin` values, a startup
   session cookie, and a CSRF header. Requests without them fail closed.
+- The desktop launcher is an unsigned `.command` file plus a local uv virtualenv
+  (D-39). PyMuPDF remains AGPL-3.0 or commercial; bank legal must confirm before
+  any distribution beyond this PoC. The one-time bootstrap token is passed in the
+  first loopback URL and is not logged.
 - When uncertain, fail closed: `REVIEW_REQUIRED` or `FAILED`.
 
 ## 2. Developer environment (Cursor and AI assistants)

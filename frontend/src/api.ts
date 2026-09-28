@@ -68,8 +68,29 @@ function versioned(expected_version: number): string {
   return JSON.stringify({ expected_version });
 }
 
-export async function openSession(): Promise<void> {
-  const body = await json<{ csrf_token: string }>("/api/session");
+export function consumeBootstrapQuery(
+  search: string,
+  replace: (path: string) => void,
+): string | undefined {
+  const params = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  const bootstrap = params.get("bootstrap");
+  if (bootstrap === null || bootstrap === "") {
+    return undefined;
+  }
+  params.delete("bootstrap");
+  const rest = params.toString();
+  replace(rest === "" ? "/" : `/?${rest}`);
+  return bootstrap;
+}
+
+export async function openSession(bootstrap?: string): Promise<void> {
+  const path =
+    bootstrap === undefined || bootstrap === ""
+      ? "/api/session"
+      : `/api/session?bootstrap=${encodeURIComponent(bootstrap)}`;
+  const body = await json<{ csrf_token: string }>(path);
   csrfToken = body.csrf_token;
 }
 

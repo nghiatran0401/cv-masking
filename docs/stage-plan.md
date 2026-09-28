@@ -28,7 +28,7 @@ then handoff, then **git commit** (D-18).
 | 12 | Local job queue | Complete (committed) |
 | 13 | HR interface | Complete (committed) |
 | 14 | Runtime hardening | Complete (committed) |
-| 15 | Local build and launcher | Not started |
+| 15 | Local build and launcher | Complete (committed) |
 | 16 | Evaluation and release candidate | Not started |
 | — | Windows support (future, unscheduled) | Not defined |
 
@@ -279,6 +279,8 @@ Acceptance: HR runs one launcher; no Node development server is required; shutdo
 Stage 0 notes: macOS only; Windows is the future stage below (D-08).
 
 Decision D-39 (after Stage 11): a `.command` launcher with a bundled Python environment, installed once by IT, unsigned. Blocked on the tech lead confirming the PyMuPDF AGPL-3.0 licence with bank legal/IT.
+
+Stage 15 notes: FastAPI serves `cv_masking/static` (copied by `make build`). `python -m cv_masking --desktop` takes `data/lock/instance.lock`, sets a one-time `CV_MASKING_BOOTSTRAP_TOKEN`, waits for `/api/health`, and runs `/usr/bin/open` on `http://127.0.0.1:<port>/?bootstrap=…`. Health stays public. Dev (`make dev --reload`) does not require the token. AGPL is residual. Apple Silicon tested; Intel not tested. See [install.md](install.md) and [stage-handoffs/stage-15.md](stage-handoffs/stage-15.md).
 
 ## Stage 16 — Evaluation and release candidate
 Goal: Establish evidence for the presentation and decision to continue.

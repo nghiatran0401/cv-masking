@@ -63,18 +63,27 @@ def test_only_the_sqlite_adapter_imports_sqlite() -> None:
             assert path.is_relative_to(SRC / "adapters" / "sqlite"), path.name
 
 
+WORKER_PROCESS = SRC / "adapters" / "worker" / "process.py"
+DESKTOP = SRC / "desktop.py"
+_OS_PROCESS_CALLS = {"system", "popen", "fork", "forkpty", "posix_spawn", "posix_spawnp"}
+
+
 def test_no_source_module_starts_subprocesses_or_opens_sockets() -> None:
     for path in SRC.rglob("*.py"):
-        assert not _imports(path) & NETWORK_AND_PROCESS, path.name
-
-
-WORKER_PROCESS = SRC / "adapters" / "worker" / "process.py"
-_OS_PROCESS_CALLS = {"system", "popen", "fork", "forkpty", "posix_spawn", "posix_spawnp"}
+        imported = _imports(path)
+        if path == DESKTOP:
+            assert "subprocess" in imported
+            assert "http.client" in imported
+            assert not imported & (NETWORK_AND_PROCESS - {"subprocess", "http.client"})
+            continue
+        assert not imported & NETWORK_AND_PROCESS, path.name
 
 
 def test_only_the_worker_adapter_starts_a_process() -> None:
     """One same-interpreter worker via multiprocessing spawn (D-33); nothing else runs programs."""
     for path in SRC.rglob("*.py"):
+        if path == DESKTOP:
+            continue
         uses = {m for m in _imports(path) if m.split(".")[0] in {"multiprocessing", "concurrent"}}
         if path != WORKER_PROCESS:
             assert not uses, (path.name, uses)
