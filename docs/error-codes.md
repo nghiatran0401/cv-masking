@@ -50,9 +50,10 @@ Terminal states: `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`. Individual
 downloads are available for `COMPLETED`, for `REVIEW_REQUIRED` documents that
 already have a verified output (HR inspects the masked file before keep or
 delete), and for `FAILED` residual-verification leaks (`VERIFY_RESIDUAL_*`,
-D-46). Those residual files are inspection-only: they still contain unmasked
-values, they cannot become `COMPLETED`, and they are not in the ZIP. The ZIP
-export includes only `COMPLETED` files plus the metadata CSV.
+D-46). Those residual files still contain unmasked values and cannot become
+`COMPLETED`. The HR bulk ZIP (`output.zip`) includes every downloadable output
+except `REDACT_SANITIZE_FAILED` (D-48). The server export ZIP still holds only
+`COMPLETED` files plus the metadata CSV.
 `COMPLETED` is reachable **only** with a verification `PASSED` result: either
 directly, or when HR approves findings-only review reasons on an output that
 already passed. A verifier `REVIEW_REQUIRED` result can never be approved into

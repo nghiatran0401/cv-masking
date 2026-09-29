@@ -124,12 +124,13 @@ by file permissions (A-2, A-3).
 | Uploaded input copy | data/inputs | Document reaches a terminal state (`COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`); or HR deletes the document/batch. A document in `REVIEW_REQUIRED` keeps its input until HR decides. |
 | Work/intermediate files | data/work | End of each upload identification or processing attempt (success or failure). |
 | Masked output | data/outputs | HR deletes it (in the app, or by deleting the folder). **No automatic expiry** (D-23). |
-| ZIP export (API) | Temporary `export.zip` in `data/work/<uuid>/` | Deleted when the download response finishes (the work directory is closed in a background task). If the process dies first, the sweeper removes the work directory after 1 h. There is no `data/exports` directory. The HR **Tải tất cả CV đã che** ZIP is built in the browser and is not stored under `data/`. |
+| ZIP export (API) | Temporary `export.zip` in `data/work/<uuid>/` | Deleted when the download response finishes (the work directory is closed in a background task). If the process dies first, the sweeper removes the work directory after 1 h. There is no `data/exports` directory. The HR **Tải tất cả CV đã che** ZIP (`output.zip`) is built in the browser, may include original File bytes from this tab, and is not stored under `data/`. |
 | CSV report (metadata only) | Generated on demand, not stored | — |
 | Evaluation JSON/Markdown (counts only) | stdout of `make eval`; not stored by the app | — |
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | `data/logs/app.log` (10 MiB, 7 backups) | Rotated; leftover files stay until HR deletes `data/`. |
 | Original filenames (display and download names) | Browser tab memory | Tab closed or reloaded. Never written to disk by the server. |
+| Pasted CV source URLs | Browser tab memory | Tab closed, reloaded, new batch, or purge. Never sent to the API. |
 | Extracted text, detected values, decompressed DOCX parts | Worker process memory | Dropped when the document's verification ends, or when the worker process is ended (timeout, crash, shutdown); never written to disk by the app. |
 
 There is no age-based deletion of inputs or outputs (D-23). HR is responsible for deleting

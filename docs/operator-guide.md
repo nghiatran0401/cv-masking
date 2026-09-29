@@ -26,21 +26,26 @@ drafts inside the UI (there is no such field) or into ChatGPT/Cursor.
 1. Create a batch. The salary toggle defaults **on** (salary is masked).
    Change it only before you start the batch; it locks once processing
    starts.
-2. Drop PDF and DOCX CVs (up to 50 files, 20 MB each, 30 PDF pages).
-   Legacy `.doc`, macros, and templates are refused.
+2. Drop PDF and DOCX CVs, or paste a list of company intranet links, open
+   each in this browser (they only work on the bank network), save the files
+   into a folder, then **Chọn thư mục**. The local server does **not** download
+   those URLs. Up to 50 files, 20 MB each, 30 PDF pages. Legacy `.doc`,
+   macros, and templates are refused.
 3. Start the batch. One document runs at a time. Status is codes and
    per-type counts only — never the candidate's text. If a row fails,
    **Thử lại** re-sends that file in this batch (the file must still be in
    this browser tab). Extra new files need a new batch.
 4. When a row is `COMPLETED`, **View** opens a masked PDF in the app.
    Word files are download-only (the app never converts formats). Download
-   saves `masked_<original filename>`. **Tải tất cả CV đã che** packs every
-   completed file into `masked_cvs.zip` under those names. Original
-   filenames stay in this browser tab only; they are not in SQLite or CSV.
-   If a row says leftover
+   saves `masked_<original filename>`. **Tải tất cả CV đã che** builds
+   `output.zip`. Each downloadable candidate is a folder
+   `output/candidate <name>/` with the original file and `masked_<name>`,
+   including **Cần xem** rows. Files that failed with *Không gỡ được siêu dữ
+   liệu hoặc nội dung ẩn* are omitted. Share only the `masked_` files you have
+   checked. Original filenames stay in this browser
+   tab only; they are not in SQLite or CSV. If a row says leftover
    information remains, **View** is for inspection only — do not share that
-   file. The row lists leftover types and pages, never the leftover text.
-   That leftover file is not included in the ZIP.
+   file until you have checked it. The row lists leftover types and pages, never the leftover text.
 5. `REVIEW_REQUIRED`: **View** a PDF, or download if a file is offered.
    Keep (approve → `COMPLETED`) only when every reason is a findings
    reason and verification already passed. Deny deletes the output.

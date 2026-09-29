@@ -129,7 +129,7 @@ flowchart LR
 | T-11 | Elevation / DoS | Malicious PDF exploits parser, decompression bomb, huge page count, infinite loop. | Worker isolation; limits; timeouts; pinned parser version; fuzz-style malformed fixtures. | 6, 12, 14 |
 | T-12 | Tampering | Path traversal or symlink escape via IDs or archive entries. | Server-generated UUIDs only; containment check; symlink refusal; ZIP built from server paths. | 3, 13, 14 |
 | T-13 | Info disclosure | Temp/work files left behind after crash. | Atomic writes; `finally` cleanup; startup + periodic sweeper (1 h for leftovers). | 3, 12 |
-| T-14 | Info disclosure | ZIP includes inputs or work files. | ZIP built only from COMPLETED output paths; test asserts contents. | 13 |
+| T-14 | Info disclosure | ZIP includes inputs or work files. | Server ZIP is COMPLETED outputs only. The browser `output.zip` may include original File bytes from this tab (D-48); the UI tells HR to share only `masked_` files. | 13 |
 | T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote URLs; CSP `default-src 'self'`; `frame-src 'self' blob:` only so a masked PDF blob can be iframed; `object-src` stays `none`; build scan for URLs. | 1, 13, 15 |
 | T-16 | Tampering | Supply-chain compromise of a dependency. | Minimal deps; lockfiles with hashes; justification per dep; no install scripts where avoidable. | 1+ |
 | T-17 | Info disclosure | Developer pastes real CV into Cursor, or agent reads runtime data. | SECURITY.md rules; synthetic-only fixtures; `.cursorignore`; runtime root outside repo. | 0 |
@@ -179,5 +179,9 @@ flowchart LR
     masked (D-43). They can re-identify a candidate. Clickable hyperlink
     targets are still stripped.
 20. HR download names are `masked_<original filename>`, which often contains
-    the candidate's name. Those names exist only in this browser tab and in
-    the laptop Downloads folder; they are not stored by the server.
+    the candidate's name. The bulk ZIP also copies the original File from this
+    tab into `output/candidate <name>/`. Those names and originals exist only
+    in this browser tab and in     the laptop Downloads folder; they are not stored
+    by the server. Do not share the original copies.
+21. Pasted source URLs exist only in this tab. Opening them uses the HR browser
+    on the bank network. The local server does not download them.

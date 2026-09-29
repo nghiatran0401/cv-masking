@@ -17,6 +17,10 @@ Tech: React and TypeScript for the screen. Python 3.12 and FastAPI for the serve
 **2. HR uploads a batch**
 Up to 50 text PDF or Word (`.docx`) files. Vietnamese and English are both
 supported. Salary is hidden by default. HR can turn that off for the whole batch.
+If HR has a list of CV links (often only reachable on the company
+network), they paste the URLs in the app, open each link in this browser,
+save the files into a folder, then choose the folder. The app never fetches
+those URLs; the local server never sees the links.
 Tech: the screen sends the files to the local server. SQLite stores job status
 and counts only. It never stores the personal text itself.
 
@@ -60,9 +64,12 @@ Tech: one local background worker, one document at a time. The screen shows
 status and counts, never the original personal text.
 
 **9. HR downloads the result**
-PDF can be viewed first. Word is download-only. One file, or all completed
-files as a ZIP (`masked_cvs.zip`). Saved names are `masked_` plus the original
-file name. Original names stay in this browser tab; they are not stored.
+PDF can be viewed first. Word is download-only. One file, or all downloadable
+files as `output.zip` (including rows still in review). Files that could not
+strip hidden content are left out. Each candidate folder holds the original
+file and `masked_` plus that name. Share only the `masked_` copies you have
+checked. Original names stay in this browser tab; they are not stored on the
+server.
 
 **10. HR deletes the batch when they are done**
 Files stay on the laptop until HR deletes the batch. Temporary work files are

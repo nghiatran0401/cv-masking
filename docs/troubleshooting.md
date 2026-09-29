@@ -50,8 +50,10 @@ fails the same way (`T` codes).
 | `JOB_INTERRUPTED` | App stopped mid-document | **Thử lại** in this tab. |
 | `STORAGE_WRITE_FAILED` | Disk/permissions | Free space; check `data/` is owner-only. |
 
-Downloads are saved as `masked_<original filename>`. Stored files on disk
-are still `redacted-<uuid>.…`. If Word or Preview still shows a
+Downloads are saved as `masked_<original filename>`. **Tải tất cả** is
+`output.zip` with original + masked copies per candidate; share only
+`masked_`. Stored files on disk are still `redacted-<uuid>.…`. If Word or
+Preview still shows a
 contact value in **body text**, do not share the file. If it appears only
 inside a **photo**, that is the accepted D-13 limitation.
 

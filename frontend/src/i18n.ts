@@ -17,7 +17,11 @@ type MessageTree = {
   purge: string;
   drop: string;
   dropHelp: string;
+  urlList: string;
+  urlPaste: string;
+  urlHelp: string;
   browse: string;
+  browseFolder: string;
   uploading: string;
   file: string;
   status: string;
@@ -36,6 +40,8 @@ type MessageTree = {
   keep: string;
   deny: string;
   downloadAll: string;
+  downloadAllHelp: string;
+  noCvInFolder: string;
   empty: string;
   busy: string;
   retryMissing: string;
@@ -68,7 +74,12 @@ export const MESSAGES: Record<Language, MessageTree> = {
     purge: "Xóa lô này",
     drop: "Kéo thả PDF hoặc DOCX vào đây",
     dropHelp: "Tối đa 50 tệp mỗi lô. Tên tệp chỉ hiện trên màn hình này.",
+    urlList: "Danh sách liên kết CV",
+    urlPaste: "Dán URL, mỗi dòng một liên kết",
+    urlHelp:
+      "Không lấy CV từ liên kết mạng. Dán URL (chỉ mở được trên mạng công ty), mở từng liên kết trên trình duyệt này, lưu PDF/DOCX vào một thư mục, rồi chọn thư mục hoặc kéo thả.",
     browse: "Chọn tệp",
+    browseFolder: "Chọn thư mục",
     uploading: "Đang tải lên",
     file: "Tệp",
     status: "Trạng thái",
@@ -87,6 +98,9 @@ export const MESSAGES: Record<Language, MessageTree> = {
     keep: "Giữ",
     deny: "Xóa bản đã che",
     downloadAll: "Tải tất cả CV đã che",
+    downloadAllHelp:
+      "Gói gồm cả bản Cần xem. Không gồm lỗi không gỡ được nội dung ẩn. Chỉ chia sẻ tệp masked_ đã kiểm.",
+    noCvInFolder: "Thư mục không có PDF hoặc DOCX.",
     empty: "Chưa có tệp.",
     busy: "Đang xử lý…",
     retryMissing:
@@ -214,7 +228,12 @@ export const MESSAGES: Record<Language, MessageTree> = {
     purge: "Delete this batch",
     drop: "Drop PDF or DOCX files here",
     dropHelp: "Up to 50 files per batch. File names stay on this screen only.",
+    urlList: "CV link list",
+    urlPaste: "Paste URLs, one per line",
+    urlHelp:
+      "This app does not fetch CVs from URLs. Paste links that only work on the company network, open each in this browser, save the PDF/DOCX files into a folder, then choose the folder or drop the files.",
     browse: "Choose files",
+    browseFolder: "Choose folder",
     uploading: "Uploading",
     file: "File",
     status: "Status",
@@ -233,6 +252,9 @@ export const MESSAGES: Record<Language, MessageTree> = {
     keep: "Keep",
     deny: "Delete masked file",
     downloadAll: "Download all masked CVs",
+    downloadAllHelp:
+      "Includes files still in review. Omits files that could not strip hidden content. Share only masked_ copies you have checked.",
+    noCvInFolder: "That folder has no PDF or DOCX files.",
     empty: "No files yet.",
     busy: "Processing…",
     retryMissing:

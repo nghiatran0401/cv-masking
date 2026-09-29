@@ -36,10 +36,13 @@ laptop and produces permanently redacted copies.
 - Hidden-content removal: hidden/non-visible content is always removed, and HR sees the
   *kind* and count of what was removed (D-32; see [supported-pdf.md](supported-pdf.md) §4).
 - Per-document status, safe finding counts (counts per entity type only), individual download,
-  a ZIP of completed masked files, and a metadata-only CSV report (server export).
+  and a ZIP of completed files grouped per candidate (original + masked copy).
 - Stored files are named `redacted-<uuid>.pdf` or `redacted-<uuid>.docx`. HR downloads
   are named `masked_<original filename>` in the browser from tab memory. Original
-  filenames are never stored.
+  filenames are never stored on the server.
+- Files can be dropped, chosen one by one, or imported from a local folder. HR may
+  paste company-intranet CV URLs and open them in this browser; the local server
+  does not fetch CVs from URLs.
 - Local retention and cleanup per [data-retention.md](data-retention.md).
 
 ## 4. Non-goals
@@ -49,6 +52,8 @@ laptop and produces permanently redacted copies.
   README must say this.
 - No cloud, AWS, remote storage, telemetry, analytics, crash reporting, update checks,
   remote fonts/CDNs, or external AI/LLM/API calls at runtime.
+- No fetching of CVs from URLs or other remote hosts. HR saves those files onto this
+  laptop first, then chooses a local folder or drops the files.
 - No OCR and no image/scanned CVs in this PoC. Image-only PDFs go to `REVIEW_REQUIRED`
   with no output (see [supported-pdf.md](supported-pdf.md)).
 - No photo or image masking. Embedded images, including candidate photos and any text
@@ -105,7 +110,7 @@ laptop and produces permanently redacted copies.
 | D-35 | DOCX text inside legacy `w:object` content (OLE objects, old drawings) is not redacted in place. The object is always removed (§6.4), and a finding inside it makes the redactor fail closed (`REDACT_SANITIZE_FAILED`/`REDACT_FAILED`), so HR redacts that CV by hand. Revisit only if pilot users hit it often; the fix would be to treat a range entirely inside a deleted element as handled. | Tech lead, after Stage 10b |
 | D-36 | Hidden text applied through a style is not resolved by the redactor. Such text is still extracted and scanned, so PII in it is redacted. Stage 11b rejects the output (`VERIFY_RESIDUAL_METADATA`) if any style in `styles.xml` sets `w:vanish` or `w:specVanish` and the document uses that style. | Tech lead, after Stage 10b |
 | D-37 | Verification (Stages 11, 11b) reruns only the deterministic Stage 7 rules; names are verified by the source-value search and the position check. Only distinctive source values (multi-token names, contacts, identifiers, full dates of birth, numbered addresses; at least 6 letters or digits) are searched anywhere in the output; short or generic values are checked only where they were redacted and by the rerun. A name hit that lies only inside a kept personal URL (D-43) is not a residual. An uncertain residual detection gives a deny-only `REVIEW_REQUIRED` (`VERIFY_REVIEW`), not `FAILED`. | Tech lead, after Stage 11 |
-| D-38 | Stored outputs and API `Content-Disposition` stay `redacted-<uuid>.pdf/.docx`. HR downloads (one file, or all completed files as a ZIP) are named `masked_<original filename>` from the name held in this browser tab. Original names are never written to SQLite, logs, API status, or CSV. If the tab lost the name, the file is `masked_<short-id>.ext`. The ZIP is built in the browser and holds only `COMPLETED` files. The server export ZIP (UUID names plus a metadata-only CSV of ids, statuses, codes, and counts) remains for API use. | Tech lead, after Stage 11 (revised) |
+| D-38 | Stored outputs and API `Content-Disposition` stay `redacted-<uuid>.pdf/.docx`. HR single-file downloads are named `masked_<original filename>` from the name held in this browser tab. Original names are never written to SQLite, logs, API status, or CSV. If the tab lost the name, the file is `masked_<short-id>.ext`. Revised by D-48. | Tech lead, after Stage 11 (revised) |
 | D-39 | Stage 15 launcher is a double-clickable `.command` script with a bundled Python environment, installed once by IT; no signing or notarization in the PoC. Before Stage 15 the tech lead confirms the PyMuPDF AGPL-3.0 licence with bank legal/IT. | Tech lead, after Stage 11 |
 | D-40 | Stage 16 evaluation uses a synthetic annotated set kept in the repository. Optionally, HR may later run the harness locally on authorized real CVs and share only the metadata report; real CVs never go through Cursor or any AI tool. | Tech lead, after Stage 11 |
 | D-41 | Stage 12 choices: `DETECT_FAILED` and `JOB_TIMEOUT` are terminal (`T`), because detection is deterministic and a retry is a fresh upload that would fail the same way; the per-document budget is 120 s (configurable, cap 600 s) covering validation, processing, and verification; cancel applies to `CREATED`, `UPLOADED`, and `QUEUED`; at shutdown the document in progress gets 10 s, then fails with `JOB_INTERRUPTED`; documents a Stage 11 database held for hidden-content approval fail with `JOB_INTERRUPTED` on upgrade (migration 2). | Tech lead, after Stage 12 |
@@ -113,8 +118,10 @@ laptop and produces permanently redacted copies.
 | D-43 | Personal URLs (LinkedIn, GitHub, Facebook, portfolios, and messaging handles) are not masked. Visible URL text stays; PDF/DOCX hyperlink targets are still stripped as hidden content (D-32). Policy version 2. | Tech lead |
 | D-44 | Hidden PDF optional content is evaluated with the PDF membership rules (OCMD policies and `And`/`Or`/`Not` visibility expressions), including inline dictionaries and indirect `/OCGs`/`VE` arrays used by Canva/Figma-style exports. A render change confined to that hidden content is accepted (some viewers draw spec-hidden OCMD). Revised by D-47. | Tech lead |
 | D-45 | After a batch has started, **Thử lại** re-uploads the browser file into the same batch and replaces the FAILED row (new document/input ids). A FINISHED batch returns to RUNNING. Extra new files are still refused (`UPLOAD_BATCH_CLOSED`). The salary toggle stays locked. | Tech lead |
-| D-46 | `VERIFY_RESIDUAL_*` keeps the masked output for inspection (View/Download). The UI shows leftover entity *types* and PDF *pages* only — never the leftover text. The file cannot become `COMPLETED`. The ZIP still holds only `COMPLETED` files. Other FAILED codes still delete the output. | Tech lead |
+| D-46 | `VERIFY_RESIDUAL_*` keeps the masked output for inspection (View/Download). The UI shows leftover entity *types* and PDF *pages* only — never the leftover text. The file cannot become `COMPLETED`. Other FAILED codes still delete the output. Revised by D-48 for which files enter the HR ZIP. | Tech lead |
 | D-47 | Optional-content membership that cannot be decided is removed (over-redaction), not a reason to refuse the file. Malformed content streams, a render that introduces new extractable text, or leftover hidden/stripped catalogue after rewrite still fail closed (`REDACT_SANITIZE_FAILED`). | Tech lead |
+| D-48 | **Tải tất cả CV đã che** builds `output.zip` in the browser. Each included CV is `output/candidate <stem>/<file>` plus `masked_<file>`. Original bytes come from the File still in this tab. The ZIP includes every downloadable output (`COMPLETED`, `REVIEW_REQUIRED` with a file, and inspectable residual failures) except `REDACT_SANITIZE_FAILED`. Share only `masked_` copies that HR has checked. | Tech lead |
+| D-49 | The app does not fetch CV URLs. HR may paste up to 50 `http(s)` links in the tab; each is opened in the same browser (company intranet). FastAPI never GETs them. After the files are on this laptop, **Chọn thư mục** or drop. URLs stay in tab memory only and are never stored. | Tech lead |
 
 ## 6. Known gaps
 

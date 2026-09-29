@@ -55,6 +55,42 @@ body {
   background: #f4f4f4;
 }
 
+.drop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.url-import {
+  margin: 1rem 0;
+}
+
+.url-import h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.url-import textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  font: inherit;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+
+.url-links {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  text-align: left;
+}
+
+.url-links a {
+  overflow-wrap: anywhere;
+}
+
 .file-input {
   position: absolute;
   width: 1px;

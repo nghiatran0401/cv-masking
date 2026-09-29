@@ -32,8 +32,9 @@ import {
 } from "./api";
 import {
   ALL_MASKED_ZIP_NAME,
+  candidateArchiveLayout,
+  cvFilesFrom,
   maskedDownloadName,
-  uniqueDownloadName,
 } from "./downloadNames";
 import {
   MESSAGES,
@@ -45,6 +46,7 @@ import {
   saveLanguage,
 } from "./i18n";
 import type { BatchDetail, DocumentState, DocumentView } from "./types";
+import { parseSourceLinks } from "./urlList";
 import { zipStoreBlob, type ZipEntry } from "./zip";
 
 const POLL_MS = 1500;
@@ -77,10 +79,6 @@ function canCancel(state: DocumentState): boolean {
   return state === "created" || state === "uploaded" || state === "queued";
 }
 
-function completedMasked(documents: readonly DocumentView[]): DocumentView[] {
-  return documents.filter((job) => job.state === "completed" && job.has_output);
-}
-
 function canDownload(job: DocumentView): boolean {
   switch (job.state) {
     case "completed":
@@ -102,6 +100,10 @@ function canDownload(job: DocumentView): boolean {
       return exhausted;
     }
   }
+}
+
+function bulkDownloadable(job: DocumentView): boolean {
+  return canDownload(job) && job.error_code !== "REDACT_SANITIZE_FAILED";
 }
 
 function canPreview(job: DocumentView): boolean {
@@ -153,9 +155,12 @@ function newKey(): string {
 
 export function App() {
   const fileInputId = useId();
+  const folderInputId = useId();
+  const urlListId = useId();
   const [language, setLanguage] = useState<Language>(loadLanguage);
   const [batch, setBatch] = useState<BatchDetail | null>(null);
   const [locals, setLocals] = useState<LocalFile[]>([]);
+  const [urlDraft, setUrlDraft] = useState("");
   const [maskSalary, setMaskSalaryState] = useState(true);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -219,6 +224,8 @@ export function App() {
     return map;
   }, [locals]);
 
+  const sourceLinks = useMemo(() => parseSourceLinks(urlDraft), [urlDraft]);
+
   const changeLanguage = (next: Language): void => {
     setLanguage(next);
   };
@@ -233,12 +240,16 @@ export function App() {
   };
 
   const applyFiles = async (list: File[]): Promise<void> => {
-    if (list.length === 0) {
+    const files = cvFilesFrom(list);
+    if (files.length === 0) {
+      if (list.length > 0) {
+        setNotice(t.noCvInFolder);
+      }
       return;
     }
     setNotice(null);
     const current = await ensureBatch();
-    for (const file of list) {
+    for (const file of files) {
       const key = newKey();
       setLocals((rows) => [
         ...rows,
@@ -333,6 +344,7 @@ export function App() {
     try {
       const created = await createBatch(maskSalary);
       setLocals([]);
+      setUrlDraft("");
       await refresh(created.batch_id);
     } finally {
       setBusy(false);
@@ -348,6 +360,7 @@ export function App() {
       await purgeBatch(batch.batch_id);
       setBatch(null);
       setLocals([]);
+      setUrlDraft("");
     } finally {
       setBusy(false);
     }
@@ -398,28 +411,34 @@ export function App() {
     if (batch === null || exporting) {
       return;
     }
-    const jobs = completedMasked(batch.documents);
+    const jobs = batch.documents.filter((job) => bulkDownloadable(job));
     if (jobs.length === 0) {
       return;
     }
     setExporting(true);
     setNotice(null);
     try {
-      const used = new Set<string>();
+      const usedFolders = new Set<string>();
       const entries: ZipEntry[] = [];
       for (const job of jobs) {
         const { blob } = await fetchMaskedFile(
           downloadUrl(batch.batch_id, job.document_id),
         );
+        const original = fileFor(job.document_id);
+        const layout = candidateArchiveLayout(
+          names.get(job.document_id),
+          job.document_format,
+          job.document_id,
+          usedFolders,
+        );
+        if (original !== undefined) {
+          entries.push({
+            name: layout.originalPath,
+            bytes: new Uint8Array(await original.arrayBuffer()),
+          });
+        }
         entries.push({
-          name: uniqueDownloadName(
-            maskedDownloadName(
-              names.get(job.document_id),
-              job.document_format,
-              job.document_id,
-            ),
-            used,
-          ),
+          name: layout.maskedPath,
           bytes: new Uint8Array(await blob.arrayBuffer()),
         });
       }
@@ -435,7 +454,8 @@ export function App() {
     }
   };
 
-  const completed = completedMasked(batch?.documents ?? []);
+  const downloadable =
+    batch?.documents.filter((job) => bulkDownloadable(job)) ?? [];
 
   return (
     <main className="app">
@@ -507,7 +527,7 @@ export function App() {
           >
             {t.purge}
           </button>
-          {completed.length > 0 && batch !== null ? (
+          {downloadable.length > 0 && batch !== null ? (
             <button
               type="button"
               className="button-link"
@@ -520,6 +540,36 @@ export function App() {
             </button>
           ) : null}
         </div>
+        {downloadable.length > 0 ? (
+          <p className="hint">{t.downloadAllHelp}</p>
+        ) : null}
+      </section>
+
+      <section className="url-import" aria-label={t.urlList}>
+        <h2>{t.urlList}</h2>
+        <p className="hint">{t.urlHelp}</p>
+        <label htmlFor={urlListId}>{t.urlPaste}</label>
+        <textarea
+          id={urlListId}
+          rows={4}
+          value={urlDraft}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => {
+            setUrlDraft(event.target.value);
+          }}
+        />
+        {sourceLinks.length > 0 ? (
+          <ol className="url-links">
+            {sourceLinks.map((link) => (
+              <li key={link.href}>
+                <a href={link.href} target="_blank" rel="noopener noreferrer">
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ol>
+        ) : null}
       </section>
 
       <section
@@ -536,13 +586,37 @@ export function App() {
       >
         <p>{t.drop}</p>
         <p className="hint">{t.dropHelp}</p>
-        <label htmlFor={fileInputId} className="button-link">
-          {t.browse}
-        </label>
+        <div className="drop-actions">
+          <label htmlFor={fileInputId} className="button-link">
+            {t.browse}
+          </label>
+          <label htmlFor={folderInputId} className="button-link">
+            {t.browseFolder}
+          </label>
+        </div>
         <input
           id={fileInputId}
           type="file"
           accept={ACCEPT}
+          multiple
+          className="file-input"
+          onChange={(event) => {
+            const chosen = event.target.files;
+            if (chosen !== null) {
+              void applyFiles([...chosen]);
+            }
+            event.target.value = "";
+          }}
+        />
+        <input
+          id={folderInputId}
+          ref={(node) => {
+            if (node !== null) {
+              node.setAttribute("webkitdirectory", "");
+              node.setAttribute("directory", "");
+            }
+          }}
+          type="file"
           multiple
           className="file-input"
           onChange={(event) => {

@@ -31,6 +31,11 @@ test("the UI is local-only, bilingual, and salary is the only toggle", async ({
   await expect(
     page.getByRole("button", { name: "Bắt đầu che" }),
   ).toBeDisabled();
+  await expect(page.getByText("Chọn thư mục", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Dán URL, mỗi dòng một liên kết")).toBeVisible();
+  await expect(
+    page.getByText("Không lấy CV từ liên kết mạng", { exact: false }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "English" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "CV masking",
@@ -45,7 +50,7 @@ test("a dropped synthetic PDF keeps its display name in the table", async ({
   page,
 }) => {
   await page.goto("/");
-  const input = page.locator('input[type="file"]');
+  const input = page.getByLabel("Chọn tệp");
   await input.setInputFiles({
     name: "synthetic-cv.pdf",
     mimeType: "application/pdf",

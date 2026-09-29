@@ -1,7 +1,13 @@
-export const ALL_MASKED_ZIP_NAME = "masked_cvs.zip";
+export const ALL_MASKED_ZIP_NAME = "output.zip";
+export const OUTPUT_ROOT = "output";
 
 const UNSAFE_ASCII = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
 const KNOWN_EXT = /\.(pdf|docx)$/i;
+
+export type CandidateArchiveLayout = {
+  originalPath: string;
+  maskedPath: string;
+};
 
 export function maskedDownloadName(
   originalName: string | undefined,
@@ -11,6 +17,16 @@ export function maskedDownloadName(
   const ext = extensionFor(format, originalName);
   const stem = stemFrom(originalName, documentId);
   return `masked_${stem}${ext}`;
+}
+
+export function originalDownloadName(
+  originalName: string | undefined,
+  format: "pdf" | "docx" | null,
+  documentId: string,
+): string {
+  const ext = extensionFor(format, originalName);
+  const stem = stemFrom(originalName, documentId);
+  return `${stem}${ext}`;
 }
 
 export function uniqueDownloadName(name: string, used: Set<string>): string {
@@ -28,6 +44,51 @@ export function uniqueDownloadName(name: string, used: Set<string>): string {
   }
   used.add(candidate.toLowerCase());
   return candidate;
+}
+
+export function uniqueFolderName(name: string, used: Set<string>): string {
+  const key = name.toLowerCase();
+  if (!used.has(key)) {
+    used.add(key);
+    return name;
+  }
+  let n = 2;
+  let candidate = `${name} ${String(n)}`;
+  while (used.has(candidate.toLowerCase())) {
+    n += 1;
+    candidate = `${name} ${String(n)}`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+export function candidateArchiveLayout(
+  originalName: string | undefined,
+  format: "pdf" | "docx" | null,
+  documentId: string,
+  usedFolders: Set<string>,
+): CandidateArchiveLayout {
+  const folder = uniqueFolderName(
+    `candidate ${stemFrom(originalName, documentId)}`,
+    usedFolders,
+  );
+  const dir = `${OUTPUT_ROOT}/${folder}`;
+  return {
+    originalPath: `${dir}/${originalDownloadName(originalName, format, documentId)}`,
+    maskedPath: `${dir}/${maskedDownloadName(originalName, format, documentId)}`,
+  };
+}
+
+export function isCvFile(file: File): boolean {
+  const name = basename(file.name);
+  if (name.startsWith(".") || name.startsWith("~$")) {
+    return false;
+  }
+  return KNOWN_EXT.test(name);
+}
+
+export function cvFilesFrom(list: readonly File[]): File[] {
+  return list.filter((file) => isCvFile(file));
 }
 
 function extensionFor(

@@ -65,6 +65,38 @@ describe("App", () => {
     expect(screen.getByText(viCopy.salaryHelp)).toBeInTheDocument();
   });
 
+  it("offers a folder picker and ignores a folder with no CV files", async () => {
+    render(<App />);
+    expect(screen.getByText(viCopy.browseFolder)).toBeInTheDocument();
+    expect(screen.getByText(viCopy.urlHelp)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(viCopy.browseFolder), {
+      target: {
+        files: [new File(["synthetic"], ".DS_Store")],
+      },
+    });
+    expect(await screen.findByText(viCopy.noCvInFolder)).toBeInTheDocument();
+  });
+
+  it("turns pasted http(s) URLs into browser links and ignores javascript", () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(viCopy.urlPaste), {
+      target: {
+        value:
+          "https://intranet.example.invalid/path/synthetic-cv.pdf\njavascript:alert(1)",
+      },
+    });
+    const link = screen.getByRole("link", { name: "synthetic-cv.pdf" });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://intranet.example.invalid/path/synthetic-cv.pdf",
+    );
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(
+      screen.queryByRole("link", { name: /alert/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps file names in the table after a mocked upload", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
@@ -468,7 +500,7 @@ describe("App", () => {
     }
   });
 
-  it("zips only completed files as masked_cvs.zip using original names", async () => {
+  it("zips review-required files and skips sanitize failures", async () => {
     const batchId = "00000000-0000-4000-8000-0000000000aa";
     const doneId = "00000000-0000-4000-8000-0000000000d1";
     const failedId = "00000000-0000-4000-8000-0000000000d2";
@@ -508,18 +540,18 @@ describe("App", () => {
             documentView({
               document_id: doneId,
               batch_id: batchId,
-              state: "completed",
+              state: "review_required",
               has_output: true,
+              review_reasons: ["DETECT_LOW_CONFIDENCE"],
+              finding_counts: { email: 1 },
               version: 4,
             }),
             documentView({
               document_id: failedId,
               batch_id: batchId,
               state: "failed",
-              error_code: "VERIFY_RESIDUAL_DETECTION",
-              has_output: true,
-              residual_counts: { email: 1 },
-              residual_pages: { email: [1] },
+              error_code: "REDACT_SANITIZE_FAILED",
+              has_output: false,
               version: 3,
             }),
           ],
@@ -536,14 +568,17 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: viCopy.downloadAll }));
     try {
       await waitFor(() => {
-        expect(downloads.names).toEqual(["masked_cvs.zip"]);
+        expect(downloads.names).toEqual(["output.zip"]);
       });
       const zip = downloads.blobs[0];
       if (zip === undefined) {
         throw new Error("expected a zip blob");
       }
       const bytes = new Uint8Array(await zip.arrayBuffer());
-      expect(zipEntryNames(bytes)).toEqual(["masked_synthetic-cv.pdf"]);
+      expect(zipEntryNames(bytes)).toEqual([
+        "output/candidate synthetic-cv/synthetic-cv.pdf",
+        "output/candidate synthetic-cv/masked_synthetic-cv.pdf",
+      ]);
       const requested = fetchMock.mock.calls.map(([input]) =>
         requestUrl(input),
       );
