@@ -143,12 +143,6 @@ export function startBatch(
   });
 }
 
-export function purgeBatch(batchId: string): Promise<void> {
-  return request(`/api/batches/${batchId}`, { method: "DELETE" }).then(
-    () => undefined,
-  );
-}
-
 export function removeDocument(
   batchId: string,
   documentId: string,
@@ -196,6 +190,16 @@ export function denyDocument(
 
 export function downloadUrl(batchId: string, documentId: string): string {
   return `/api/batches/${batchId}/documents/${documentId}/download`;
+}
+
+export async function fetchInputFile(
+  batchId: string,
+  documentId: string,
+): Promise<Blob> {
+  const response = await request(
+    `/api/batches/${batchId}/documents/${documentId}/input`,
+  );
+  return response.blob();
 }
 
 export function exportUrl(batchId: string): string {

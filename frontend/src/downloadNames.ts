@@ -1,5 +1,7 @@
 export const ALL_MASKED_ZIP_NAME = "output.zip";
+export const MASKED_ONLY_ZIP_NAME = "masked.zip";
 export const OUTPUT_ROOT = "output";
+export const MASKED_ROOT = "masked";
 
 const UNSAFE_ASCII = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
 const KNOWN_EXT = /\.(pdf|docx)$/i;
@@ -69,7 +71,7 @@ export function candidateArchiveLayout(
   usedFolders: Set<string>,
 ): CandidateArchiveLayout {
   const folder = uniqueFolderName(
-    `candidate ${stemFrom(originalName, documentId)}`,
+    stemFrom(originalName, documentId),
     usedFolders,
   );
   const dir = `${OUTPUT_ROOT}/${folder}`;
@@ -77,6 +79,32 @@ export function candidateArchiveLayout(
     originalPath: `${dir}/${originalDownloadName(originalName, format, documentId)}`,
     maskedPath: `${dir}/${maskedDownloadName(originalName, format, documentId)}`,
   };
+}
+
+export function bulkZipName(kind: "all" | "masked"): string {
+  switch (kind) {
+    case "all":
+      return ALL_MASKED_ZIP_NAME;
+    case "masked":
+      return MASKED_ONLY_ZIP_NAME;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
+export function maskedOnlyPath(
+  originalName: string | undefined,
+  format: "pdf" | "docx" | null,
+  documentId: string,
+  usedNames: Set<string>,
+): string {
+  const file = uniqueDownloadName(
+    maskedDownloadName(originalName, format, documentId),
+    usedNames,
+  );
+  return `${MASKED_ROOT}/${file}`;
 }
 
 export function isCvFile(file: File): boolean {

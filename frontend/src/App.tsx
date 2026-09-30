@@ -19,12 +19,12 @@ import {
   denyDocument,
   downloadFile,
   downloadUrl,
+  fetchInputFile,
   fetchMaskedFile,
   getBatch,
   importSourceLink,
   isPdfBlob,
   openSession,
-  purgeBatch,
   removeDocument,
   saveBlob,
   setMaskSalary,
@@ -33,19 +33,17 @@ import {
 } from "./api";
 import { isDownloadableCvUrl } from "./cvDownload";
 import {
-  ALL_MASKED_ZIP_NAME,
+  bulkZipName,
   candidateArchiveLayout,
   cvFilesFrom,
   maskedDownloadName,
+  maskedOnlyPath,
 } from "./downloadNames";
 import {
   MESSAGES,
-  type Language,
-  loadLanguage,
   messageForCode,
   messageForReason,
   messageForState,
-  saveLanguage,
 } from "./i18n";
 import type { BatchDetail, DocumentState, DocumentView } from "./types";
 import { parseSourceLinks } from "./urlList";
@@ -169,26 +167,24 @@ export function App() {
   const fileInputId = useId();
   const folderInputId = useId();
   const urlListId = useId();
-  const [language, setLanguage] = useState<Language>(loadLanguage);
   const [batch, setBatch] = useState<BatchDetail | null>(null);
   const [locals, setLocals] = useState<LocalFile[]>([]);
   const [urlDraft, setUrlDraft] = useState("");
   const [maskSalary, setMaskSalaryState] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"all" | "masked" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [downloadHint, setDownloadHint] = useState<string | null>(null);
   const [linkNames, setLinkNames] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
   );
-  const t = MESSAGES[language];
+  const t = MESSAGES;
 
   useEffect(() => {
-    document.documentElement.lang = language;
+    document.documentElement.lang = "vi";
     document.title = t.title;
-    saveLanguage(language);
-  }, [language, t.title]);
+  }, [t.title]);
 
   useEffect(() => {
     const bootstrap = consumeBootstrapQuery(window.location.search, (path) => {
@@ -197,11 +193,11 @@ export function App() {
     void openSession(bootstrap).catch((error: unknown) => {
       setNotice(
         error instanceof ApiRequestError
-          ? messageForCode(loadLanguage(), error.code)
-          : (loadLanguage() === "en" ? MESSAGES.en : MESSAGES.vi).sessionFailed,
+          ? messageForCode(error.code)
+          : t.sessionFailed,
       );
     });
-  }, []);
+  }, [t.sessionFailed]);
 
   const refresh = useCallback(async (batchId: string) => {
     const detail = await getBatch(batchId);
@@ -245,10 +241,6 @@ export function App() {
     () => sourceLinks.filter((link) => isDownloadableCvUrl(link.href)),
     [sourceLinks],
   );
-  const changeLanguage = (next: Language): void => {
-    setLanguage(next);
-  };
-
   const ensureBatch = async (): Promise<BatchDetail> => {
     if (batch !== null && batch.state === "open") {
       return batch;
@@ -360,10 +352,28 @@ export function App() {
             setLinkNames((prev) =>
               new Map(prev).set(uploaded.document_id, link.label),
             );
+            const original = await fetchInputFile(
+              current.batch_id,
+              uploaded.document_id,
+            );
+            const file = new File([original], link.label, {
+              type: original.type,
+            });
+            setLocals((rows) => [
+              ...rows,
+              {
+                key: newKey(),
+                file,
+                documentId: uploaded.document_id,
+                progress: 100,
+                uploading: false,
+                errorCode: null,
+              },
+            ]);
           } catch (error: unknown) {
             const code =
               error instanceof ApiRequestError ? error.code : "INTERNAL_ERROR";
-            failed.push(`${link.label} (${messageForCode(language, code)})`);
+            failed.push(`${link.label} (${messageForCode(code)})`);
             if (
               code === "UPLOAD_BATCH_FILE_LIMIT" ||
               code === "UPLOAD_BATCH_SIZE_LIMIT" ||
@@ -377,8 +387,8 @@ export function App() {
       } catch (error: unknown) {
         setNotice(
           error instanceof ApiRequestError
-            ? messageForCode(language, error.code)
-            : messageForCode(language, "INTERNAL_ERROR"),
+            ? messageForCode(error.code)
+            : messageForCode("INTERNAL_ERROR"),
         );
       } finally {
         setDownloadHint(null);
@@ -411,8 +421,8 @@ export function App() {
     } catch (error: unknown) {
       setNotice(
         error instanceof ApiRequestError
-          ? messageForCode(language, error.code)
-          : messageForCode(language, "INTERNAL_ERROR"),
+          ? messageForCode(error.code)
+          : messageForCode("INTERNAL_ERROR"),
       );
     } finally {
       setBusy(false);
@@ -428,23 +438,6 @@ export function App() {
       setDownloadHint(null);
       setLinkNames(new Map());
       await refresh(created.batch_id);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onPurge = async (): Promise<void> => {
-    if (batch === null) {
-      return;
-    }
-    setBusy(true);
-    try {
-      await purgeBatch(batch.batch_id);
-      setBatch(null);
-      setLocals([]);
-      setUrlDraft("");
-      setDownloadHint(null);
-      setLinkNames(new Map());
     } finally {
       setBusy(false);
     }
@@ -484,57 +477,79 @@ export function App() {
       await refresh(batch.batch_id);
     } catch (error: unknown) {
       if (error instanceof ApiRequestError) {
-        setNotice(messageForCode(language, error.code));
+        setNotice(messageForCode(error.code));
       }
     } finally {
       setBusy(false);
     }
   };
 
-  const onDownloadAll = async (): Promise<void> => {
-    if (batch === null || exporting) {
+  const onDownloadAll = async (kind: "all" | "masked"): Promise<void> => {
+    if (batch === null || exporting !== null) {
       return;
     }
     const jobs = batch.documents.filter((job) => bulkDownloadable(job));
     if (jobs.length === 0) {
       return;
     }
-    setExporting(true);
+    setExporting(kind);
     setNotice(null);
     try {
-      const usedFolders = new Set<string>();
+      const used = new Set<string>();
       const entries: ZipEntry[] = [];
       for (const job of jobs) {
         const { blob } = await fetchMaskedFile(
           downloadUrl(batch.batch_id, job.document_id),
         );
-        const original = fileFor(job.document_id);
-        const layout = candidateArchiveLayout(
-          names.get(job.document_id),
-          job.document_format,
-          job.document_id,
-          usedFolders,
-        );
-        if (original !== undefined) {
-          entries.push({
-            name: layout.originalPath,
-            bytes: new Uint8Array(await original.arrayBuffer()),
-          });
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const label = names.get(job.document_id);
+        switch (kind) {
+          case "masked":
+            entries.push({
+              name: maskedOnlyPath(
+                label,
+                job.document_format,
+                job.document_id,
+                used,
+              ),
+              bytes,
+            });
+            break;
+          case "all": {
+            const original = fileFor(job.document_id);
+            const layout = candidateArchiveLayout(
+              label,
+              job.document_format,
+              job.document_id,
+              used,
+            );
+            if (original !== undefined) {
+              entries.push({
+                name: layout.originalPath,
+                bytes: new Uint8Array(await original.arrayBuffer()),
+              });
+            }
+            entries.push({
+              name: layout.maskedPath,
+              bytes,
+            });
+            break;
+          }
+          default: {
+            const exhaustive: never = kind;
+            return exhaustive;
+          }
         }
-        entries.push({
-          name: layout.maskedPath,
-          bytes: new Uint8Array(await blob.arrayBuffer()),
-        });
       }
-      saveBlob(zipStoreBlob(entries), ALL_MASKED_ZIP_NAME);
+      saveBlob(zipStoreBlob(entries), bulkZipName(kind));
     } catch (error: unknown) {
       setNotice(
         error instanceof ApiRequestError
-          ? messageForCode(language, error.code)
-          : messageForCode(language, "INTERNAL_ERROR"),
+          ? messageForCode(error.code)
+          : messageForCode("INTERNAL_ERROR"),
       );
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -545,26 +560,6 @@ export function App() {
     <main className="app">
       <header className="header">
         <h1>{t.title}</h1>
-        <div className="languages" role="group" aria-label={t.language}>
-          <button
-            type="button"
-            aria-pressed={language === "vi"}
-            onClick={() => {
-              changeLanguage("vi");
-            }}
-          >
-            {t.vietnamese}
-          </button>
-          <button
-            type="button"
-            aria-pressed={language === "en"}
-            onClick={() => {
-              changeLanguage("en");
-            }}
-          >
-            {t.english}
-          </button>
-        </div>
       </header>
       <p>{t.localOnly}</p>
       <p className="notice" role="note">
@@ -604,28 +599,36 @@ export function App() {
           >
             {t.start}
           </button>
-          <button
-            type="button"
-            onClick={() => void onPurge()}
-            disabled={busy || batch === null}
-          >
-            {t.purge}
-          </button>
           {downloadable.length > 0 && batch !== null ? (
-            <button
-              type="button"
-              className="button-link"
-              disabled={exporting}
-              onClick={() => {
-                void onDownloadAll();
-              }}
-            >
-              {exporting ? t.busy : t.downloadAll}
-            </button>
+            <>
+              <button
+                type="button"
+                className="button-link"
+                disabled={exporting !== null}
+                onClick={() => {
+                  void onDownloadAll("all");
+                }}
+              >
+                {exporting === "all" ? t.busy : t.downloadAll}
+              </button>
+              <button
+                type="button"
+                className="button-link"
+                disabled={exporting !== null}
+                onClick={() => {
+                  void onDownloadAll("masked");
+                }}
+              >
+                {exporting === "masked" ? t.busy : t.downloadMasked}
+              </button>
+            </>
           ) : null}
         </div>
         {downloadable.length > 0 ? (
-          <p className="hint">{t.downloadAllHelp}</p>
+          <>
+            <p className="hint">{t.downloadAllHelp}</p>
+            <p className="hint">{t.downloadMaskedHelp}</p>
+          </>
         ) : null}
       </section>
 
@@ -734,7 +737,6 @@ export function App() {
         batch={batch}
         locals={locals}
         names={names}
-        language={language}
         t={t}
         onCancel={async (job) => {
           if (batch === null) {
@@ -781,8 +783,8 @@ export function App() {
           } catch (error: unknown) {
             setNotice(
               error instanceof ApiRequestError
-                ? messageForCode(language, error.code)
-                : messageForCode(language, "INTERNAL_ERROR"),
+                ? messageForCode(error.code)
+                : messageForCode("INTERNAL_ERROR"),
             );
           }
         }}
@@ -795,7 +797,6 @@ function FileTable({
   batch,
   locals,
   names,
-  language,
   t,
   onCancel,
   onRemove,
@@ -807,8 +808,7 @@ function FileTable({
   batch: BatchDetail | null;
   locals: LocalFile[];
   names: Map<string, string>;
-  language: Language;
-  t: (typeof MESSAGES)[Language];
+  t: typeof MESSAGES;
   onCancel: (job: DocumentView) => Promise<void>;
   onRemove: (job: DocumentView) => Promise<void>;
   onRetry: (job: DocumentView) => Promise<void>;
@@ -916,7 +916,7 @@ function FileTable({
                 {row.uploading
                   ? `${t.uploading} ${String(row.progress)}%`
                   : row.errorCode !== null
-                    ? messageForCode(language, row.errorCode)
+                    ? messageForCode(row.errorCode)
                     : "—"}
               </td>
               <td>—</td>
@@ -933,9 +933,9 @@ function FileTable({
               <tr key={job.document_id}>
                 <td>{label}</td>
                 <td>
-                  <div>{messageForState(language, job.state)}</div>
+                  <div>{messageForState(job.state)}</div>
                   {job.error_code !== null ? (
-                    <div>{messageForCode(language, job.error_code)}</div>
+                    <div>{messageForCode(job.error_code)}</div>
                   ) : null}
                   {Object.keys(job.residual_counts).length > 0 ? (
                     <div className="residual">
@@ -949,7 +949,7 @@ function FileTable({
                     </div>
                   ) : null}
                   {job.review_reasons.map((reason) => (
-                    <div key={reason}>{messageForReason(language, reason)}</div>
+                    <div key={reason}>{messageForReason(reason)}</div>
                   ))}
                 </td>
                 <td>{countsList(job.finding_counts, t.entities)}</td>
@@ -1023,7 +1023,7 @@ function MaskedPdfDialog({
 }: {
   dialogRef: RefObject<HTMLDialogElement | null>;
   preview: PdfPreview;
-  t: (typeof MESSAGES)[Language];
+  t: typeof MESSAGES;
   onClose: () => void;
   onKeep: (job: DocumentView) => Promise<void>;
   onDeny: (job: DocumentView) => Promise<void>;

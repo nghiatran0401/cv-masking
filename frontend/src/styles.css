@@ -30,11 +30,6 @@ body {
   align-items: center;
 }
 
-.languages {
-  display: flex;
-  gap: 0.5rem;
-}
-
 .notice,
 .hint {
   color: #333333;

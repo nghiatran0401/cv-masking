@@ -6,7 +6,13 @@ import zipfile
 from uuid import UUID
 
 from fastapi.testclient import TestClient
-from service_helpers import SYNTHETIC_OUTPUT, uploaded_document, verified, verifying_document
+from service_helpers import (
+    SYNTHETIC_INPUT,
+    SYNTHETIC_OUTPUT,
+    uploaded_document,
+    verified,
+    verifying_document,
+)
 
 from cv_masking.adapters.local_storage import LocalInputStore, LocalOutputStore, StorageRoot
 from cv_masking.application import JobService, download_filename, zip_filename
@@ -57,6 +63,34 @@ def test_a_findings_review_can_be_downloaded_before_keep_or_delete(
     response = client.get(f"/api/batches/{held.batch_id}/documents/{held.document_id}/download")
     assert response.status_code == 200
     assert response.content == SYNTHETIC_OUTPUT
+
+
+def test_input_download_uses_a_uuid_name(
+    client: TestClient, service: JobService, input_store: LocalInputStore
+) -> None:
+    batch = service.create_batch()
+    job = uploaded_document(service, input_store, batch.batch_id)
+    response = client.get(f"/api/batches/{batch.batch_id}/documents/{job.document_id}/input")
+    assert response.status_code == 200
+    assert response.content == SYNTHETIC_INPUT
+    assert response.headers["cache-control"] == "no-store"
+    assert (
+        response.headers["content-disposition"]
+        == f'attachment; filename="input-{job.document_id.value}.pdf"'
+    )
+    assert "synthetic" not in response.headers["content-disposition"]
+
+
+def test_a_completed_document_no_longer_serves_the_input(
+    client: TestClient,
+    service: JobService,
+    input_store: LocalInputStore,
+    output_store: LocalOutputStore,
+) -> None:
+    job = _completed(service, input_store, output_store)
+    response = client.get(f"/api/batches/{job.batch_id}/documents/{job.document_id}/input")
+    assert response.status_code == 409
+    assert response.json() == {"code": ErrorCode.INTERNAL_ERROR.value}
 
 
 def test_a_document_without_output_cannot_be_downloaded(

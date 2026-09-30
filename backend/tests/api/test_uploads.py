@@ -177,10 +177,3 @@ def test_retry_replaces_a_failed_document_after_start(
     assert extra.status_code == 409
     assert extra.json()["code"] == ErrorCode.UPLOAD_BATCH_CLOSED
 
-
-def test_purge_removes_the_batch(client: TestClient, root: StorageRoot) -> None:
-    batch_id = client.post("/api/batches", json={}).json()["batch_id"]
-    _send(client, batch_id, SYNTHETIC_PDF)
-    assert client.delete(f"/api/batches/{batch_id}").status_code == 204
-    assert client.get(f"/api/batches/{batch_id}").status_code == 404
-    assert list((root.path / "inputs").iterdir()) == []

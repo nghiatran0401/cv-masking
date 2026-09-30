@@ -8,7 +8,7 @@ or unreferenced files, which ``reconcile_storage`` removes.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
@@ -20,6 +20,7 @@ from cv_masking.domain.document_job import TERMINAL_STATES, DocumentJob, Documen
 from cv_masking.domain.errors import InvalidTransitionError, InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId, ObjectRef
+from cv_masking.domain.limits import READ_CHUNK_BYTES
 from cv_masking.ports.clock import Clock
 from cv_masking.ports.metadata import (
     ConcurrentUpdateError,
@@ -333,6 +334,19 @@ class JobService:
         )
         self._delete_files_quietly(self._released_files(job, changed))
         return changed
+
+    def require_input(self, job: DocumentJob) -> None:
+        """Refuse a missing or already-released input before any response bytes are sent."""
+        if job.state in TERMINAL_STATES or job.input_ref is None or job.document_format is None:
+            raise InvalidTransitionError("input", job.state, "document has no input")
+
+    def iter_input(self, job: DocumentJob) -> Iterator[bytes]:
+        """The stored input. Call ``require_input`` first so a refusal is not mid-stream."""
+        if job.input_ref is None or job.document_format is None:
+            raise InvariantError("input download requires a stored input")
+        with self._inputs.open(job.input_ref, job.document_format) as handle:
+            while chunk := handle.read(READ_CHUNK_BYTES):
+                yield chunk
 
     def _settle_batch(self, tx: MetadataTransaction, batch_id: BatchId) -> None:
         """Mark a RUNNING batch FINISHED once none of its documents can progress unaided."""

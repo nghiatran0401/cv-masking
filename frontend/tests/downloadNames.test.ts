@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ALL_MASKED_ZIP_NAME,
+  MASKED_ONLY_ZIP_NAME,
   candidateArchiveLayout,
   isCvFile,
   maskedDownloadName,
+  maskedOnlyPath,
   originalDownloadName,
   uniqueDownloadName,
   uniqueFolderName,
@@ -62,7 +64,7 @@ describe("originalDownloadName", () => {
 });
 
 describe("candidateArchiveLayout", () => {
-  it("groups original and masked files under output/candidate <stem>", () => {
+  it("groups original and masked files under output/<stem>", () => {
     const used = new Set<string>();
     expect(
       candidateArchiveLayout(
@@ -72,17 +74,17 @@ describe("candidateArchiveLayout", () => {
         used,
       ),
     ).toEqual({
-      originalPath: "output/candidate ABC/ABC.pdf",
-      maskedPath: "output/candidate ABC/masked_ABC.pdf",
+      originalPath: "output/ABC/ABC.pdf",
+      maskedPath: "output/ABC/masked_ABC.pdf",
     });
   });
 
-  it("unique-ifies candidate folders when stems collide", () => {
+  it("unique-ifies folders when stems collide", () => {
     const used = new Set<string>();
     const first = candidateArchiveLayout("ABC.pdf", "pdf", "aa", used);
     const second = candidateArchiveLayout("ABC.pdf", "pdf", "bb", used);
-    expect(first.originalPath).toBe("output/candidate ABC/ABC.pdf");
-    expect(second.originalPath).toBe("output/candidate ABC 2/ABC.pdf");
+    expect(first.originalPath).toBe("output/ABC/ABC.pdf");
+    expect(second.originalPath).toBe("output/ABC 2/ABC.pdf");
   });
 });
 
@@ -118,5 +120,28 @@ describe("isCvFile", () => {
 describe("ALL_MASKED_ZIP_NAME", () => {
   it("does not include an original file name", () => {
     expect(ALL_MASKED_ZIP_NAME).toBe("output.zip");
+    expect(MASKED_ONLY_ZIP_NAME).toBe("masked.zip");
+  });
+});
+
+describe("maskedOnlyPath", () => {
+  it("puts every masked file in one folder", () => {
+    const used = new Set<string>();
+    expect(
+      maskedOnlyPath(
+        "ABC.pdf",
+        "pdf",
+        "00000000-0000-4000-8000-0000000000d1",
+        used,
+      ),
+    ).toBe("masked/masked_ABC.pdf");
+    expect(
+      maskedOnlyPath(
+        "ABC.pdf",
+        "pdf",
+        "00000000-0000-4000-8000-0000000000d2",
+        used,
+      ),
+    ).toBe("masked/masked_ABC-2.pdf");
   });
 });

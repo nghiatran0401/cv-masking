@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("the UI is local-only, bilingual, and salary is the only toggle", async ({
-  page,
-}) => {
+test("the UI is local-only and salary is the only toggle", async ({ page }) => {
   const remote: string[] = [];
   page.on("request", (request) => {
     const url = request.url();
@@ -39,13 +37,8 @@ test("the UI is local-only, bilingual, and salary is the only toggle", async ({
   await expect(
     page.getByRole("button", { name: "Tải các liên kết" }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "English" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "CV masking",
-  );
-  await expect(
-    page.getByText("masked, not anonymized", { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "English" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Tiếng Việt" })).toHaveCount(0);
   expect(remote).toEqual([]);
 });
 

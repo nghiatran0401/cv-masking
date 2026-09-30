@@ -14,8 +14,7 @@ import type { DocumentView } from "../src/types";
 
 const ALLOWED_CV = `https://${SOURCE_CV_HOST}/2026/synthetic-cv.pdf`;
 
-const viCopy = MESSAGES.vi;
-const enCopy = MESSAGES.en;
+const viCopy = MESSAGES;
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -46,18 +45,9 @@ describe("App", () => {
       screen.getByText(`${viCopy.maskedNotice} ${viCopy.photoNotice}`),
     ).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("vi");
-  });
-
-  it("switches to English without remote assets", () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: viCopy.english }));
     expect(
-      screen.getByRole("heading", { level: 1, name: enCopy.title }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(enCopy.maskedNotice, { exact: false }),
-    ).toBeInTheDocument();
-    expect(document.documentElement.lang).toBe("en");
+      screen.queryByRole("button", { name: "English" }),
+    ).not.toBeInTheDocument();
   });
 
   it("exposes salary as the only optional policy control", () => {
@@ -119,6 +109,12 @@ describe("App", () => {
           mask_salary: true,
           document_count: 0,
           version: 0,
+        });
+      }
+      if (url.endsWith(`/documents/${documentId}/input`)) {
+        return new Response("%PDF-synthetic-original\n", {
+          status: 200,
+          headers: { "Content-Type": "application/pdf" },
         });
       }
       if (url.endsWith("/source-links") && init?.method === "POST") {
@@ -192,12 +188,118 @@ describe("App", () => {
     expect(button).toBeEnabled();
     fireEvent.click(button);
     expect(
-      await screen.findByText(messageForState("vi", "uploaded")),
+      await screen.findByText(messageForState("uploaded")),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: viCopy.start })).toBeEnabled();
     const urls = fetchMock.mock.calls.map((call) => requestUrl(call[0]));
     expect(urls.some((url) => url.startsWith("https://"))).toBe(false);
     expect(urls.some((url) => url.endsWith("/source-links"))).toBe(true);
+    expect(urls.some((url) => url.endsWith("/input"))).toBe(true);
+  });
+
+  it("puts the linked CV and its masked file in a folder named for the file", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const documentId = "00000000-0000-4000-8000-0000000000d1";
+    let imported = false;
+    const downloads = captureDownloads();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (url.endsWith(`/documents/${documentId}/input`)) {
+        return new Response("%PDF-synthetic-original\n", {
+          status: 200,
+          headers: { "Content-Type": "application/pdf" },
+        });
+      }
+      if (url.endsWith(`/documents/${documentId}/download`)) {
+        return pdfDownload(documentId);
+      }
+      if (url.endsWith("/source-links") && init?.method === "POST") {
+        imported = true;
+        return json(
+          documentView({
+            document_id: documentId,
+            batch_id: batchId,
+            state: "uploaded",
+            version: 1,
+          }),
+        );
+      }
+      if (url.endsWith(`/api/batches/${batchId}`)) {
+        return json({
+          batch_id: batchId,
+          state: imported ? "finished" : "open",
+          mask_salary: true,
+          document_count: imported ? 1 : 0,
+          version: imported ? 2 : 0,
+          documents: imported
+            ? [
+                documentView({
+                  document_id: documentId,
+                  batch_id: batchId,
+                  state: "completed",
+                  has_output: true,
+                  version: 2,
+                }),
+              ]
+            : [],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(viCopy.urlPaste), {
+      target: { value: ALLOWED_CV },
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.downloadLinks }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: viCopy.downloadAll }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.downloadAll }));
+    try {
+      await waitFor(() => {
+        expect(downloads.names).toEqual(["output.zip"]);
+      });
+      const zip = downloads.blobs[0];
+      if (zip === undefined) {
+        throw new Error("expected a zip blob");
+      }
+      const bytes = new Uint8Array(await zip.arrayBuffer());
+      expect(zipEntryNames(bytes)).toEqual([
+        "output/synthetic-cv/synthetic-cv.pdf",
+        "output/synthetic-cv/masked_synthetic-cv.pdf",
+      ]);
+      fireEvent.click(
+        screen.getByRole("button", { name: viCopy.downloadMasked }),
+      );
+      await waitFor(() => {
+        expect(downloads.names).toEqual(["output.zip", "masked.zip"]);
+      });
+      const maskedZip = downloads.blobs[1];
+      if (maskedZip === undefined) {
+        throw new Error("expected a masked zip blob");
+      }
+      const maskedBytes = new Uint8Array(await maskedZip.arrayBuffer());
+      expect(zipEntryNames(maskedBytes)).toEqual([
+        "masked/masked_synthetic-cv.pdf",
+      ]);
+    } finally {
+      downloads.restore();
+    }
   });
 
   it("shows a failed link by the name already on screen", async () => {
@@ -243,7 +345,7 @@ describe("App", () => {
       "synthetic-cv.pdf",
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
-      messageForCode("vi", "UPLOAD_SOURCE_UNAVAILABLE"),
+      messageForCode("UPLOAD_SOURCE_UNAVAILABLE"),
     );
     expect(screen.getByRole("button", { name: viCopy.start })).toBeDisabled();
   });
@@ -332,9 +434,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("synthetic-mau.pdf")).toBeInTheDocument();
     });
-    expect(
-      screen.getByText(messageForState("vi", "uploaded")),
-    ).toBeInTheDocument();
+    expect(screen.getByText(messageForState("uploaded"))).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringMatching(/^https?:\/\/(?!127\.0\.0\.1)/),
     );
@@ -506,14 +606,10 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText(viCopy.downloadAll)).toBeInTheDocument();
     });
+    expect(screen.getByText(messageForState("completed"))).toBeInTheDocument();
+    expect(screen.getByText(messageForState("failed"))).toBeInTheDocument();
     expect(
-      screen.getByText(messageForState("vi", "completed")),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(messageForState("vi", "failed")),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(messageForCode("vi", "VERIFY_RESIDUAL_DETECTION")),
+      screen.getByText(messageForCode("VERIFY_RESIDUAL_DETECTION")),
     ).toBeInTheDocument();
     expect(screen.getByText(/Còn sót, không chia sẻ:/)).toBeInTheDocument();
     expect(
@@ -727,8 +823,8 @@ describe("App", () => {
       }
       const bytes = new Uint8Array(await zip.arrayBuffer());
       expect(zipEntryNames(bytes)).toEqual([
-        "output/candidate synthetic-cv/synthetic-cv.pdf",
-        "output/candidate synthetic-cv/masked_synthetic-cv.pdf",
+        "output/synthetic-cv/synthetic-cv.pdf",
+        "output/synthetic-cv/masked_synthetic-cv.pdf",
       ]);
       const requested = fetchMock.mock.calls.map(([input]) =>
         requestUrl(input),

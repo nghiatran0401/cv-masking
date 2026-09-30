@@ -189,11 +189,6 @@ def start_batch(
     return _batch_view(started)
 
 
-@router.delete("/{batch_id}", status_code=204)
-def purge_batch(batch_id: UUID, runtime: Annotated[Runtime, Depends(_runtime)]) -> None:
-    runtime.jobs.purge_batch(_batch_id(batch_id))
-
-
 @router.post("/{batch_id}/documents", status_code=201)
 def upload_document(
     batch_id: UUID,
@@ -294,6 +289,23 @@ def _exports(runtime: Runtime) -> ExportService:
     if runtime.exports is None:
         raise ApiError(ErrorCode.INTERNAL_ERROR, 500)
     return runtime.exports
+
+
+@router.get("/{batch_id}/documents/{document_id}/input")
+def download_input(
+    batch_id: UUID, document_id: UUID, runtime: Annotated[Runtime, Depends(_runtime)]
+) -> StreamingResponse:
+    """The stored input copy, named input-<uuid>.<ext>. The original name stays in the browser."""
+    job = _document_in(runtime, batch_id, document_id)
+    runtime.jobs.require_input(job)
+    if job.document_format is None:
+        raise InvariantError("an available input has a format")
+    name = f"input-{job.document_id.value}.{job.document_format.value}"
+    return StreamingResponse(
+        runtime.jobs.iter_input(job),
+        media_type=_media_type(job.document_format),
+        headers={**_NO_STORE, "Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/{batch_id}/documents/{document_id}/download")
