@@ -72,6 +72,10 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.pyrefly]
+# Match pytest's pythonpath. The src layout otherwise hides test helpers such as service_helpers.
+search-path = ["src", "tests", "tests/domain", "tests/application"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests", "tests/domain", "tests/application"]
