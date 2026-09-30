@@ -935,6 +935,78 @@ function MaskedPdfDialog({
   onDeny: (job: DocumentView) => Promise<void>;
 }) {
   const headingId = useId();
+  const stageRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    const stage = stageRef.current;
+    const frame = frameRef.current;
+    const objectUrl = preview.objectUrl;
+    if (stage === null || frame === null || objectUrl === null) {
+      return;
+    }
+    if (dialog !== null && !dialog.open) {
+      if (typeof dialog.showModal === "function") {
+        try {
+          dialog.showModal();
+        } catch {
+          dialog.setAttribute("open", "");
+        }
+      } else {
+        dialog.setAttribute("open", "");
+      }
+    }
+    if (dialog !== null) {
+      dialog.style.display = "flex";
+      dialog.style.flexDirection = "column";
+      dialog.style.boxSizing = "border-box";
+      dialog.style.overflow = "hidden";
+      dialog.style.width = "min(56rem, 96vw)";
+      dialog.style.height = "90vh";
+      dialog.style.maxHeight = "calc(100vh - 2rem)";
+    }
+    // Safari's PDF plugin keeps the viewport it had when src was set.
+    // Give it the stage's pixel size first, or the page stays a short band.
+    const canDeferSrc = typeof ResizeObserver === "function";
+    const applySize = (): boolean => {
+      const bounds = stage.getBoundingClientRect();
+      const width = Math.round(bounds.width);
+      const height = Math.round(bounds.height);
+      if (width < 2 || height < 2) {
+        return false;
+      }
+      frame.width = String(width);
+      frame.height = String(height);
+      frame.style.width = `${String(width)}px`;
+      frame.style.height = `${String(height)}px`;
+      return true;
+    };
+    const publish = (): void => {
+      const before = Number(frame.height);
+      const sized = applySize();
+      if (!sized && canDeferSrc) {
+        return;
+      }
+      const next = Number(frame.height);
+      if (
+        frame.getAttribute("src") !== objectUrl ||
+        (sized && next > before + 20)
+      ) {
+        frame.src = objectUrl;
+      }
+    };
+    publish();
+    if (!canDeferSrc) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      publish();
+    });
+    observer.observe(stage);
+    return () => {
+      observer.disconnect();
+    };
+  }, [dialogRef, preview.objectUrl]);
   const requestClose = (): void => {
     const dialog = dialogRef.current;
     if (dialog !== null && dialog.open && typeof dialog.close === "function") {
@@ -980,11 +1052,9 @@ function MaskedPdfDialog({
         </p>
       ) : null}
       {preview.objectUrl !== null ? (
-        <iframe
-          className="preview-frame"
-          title={t.preview}
-          src={preview.objectUrl}
-        />
+        <div className="preview-stage" ref={stageRef}>
+          <iframe ref={frameRef} className="preview-frame" title={t.preview} />
+        </div>
       ) : null}
       {preview.job.state === "review_required" ? (
         <div className="actions preview-review">
