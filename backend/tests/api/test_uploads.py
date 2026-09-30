@@ -176,4 +176,3 @@ def test_retry_replaces_a_failed_document_after_start(
     extra = _send(client, batch_id, SYNTHETIC_PDF + b"% extra\n")
     assert extra.status_code == 409
     assert extra.json()["code"] == ErrorCode.UPLOAD_BATCH_CLOSED
-

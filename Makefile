@@ -4,10 +4,11 @@ BACKEND := backend
 FRONTEND := frontend
 UV_RUN := uv run --locked
 
-.PHONY: help install hooks guard dev dev-backend dev-frontend build eval fmt lint typecheck test check
+.PHONY: help setup install hooks guard dev dev-backend dev-frontend build eval fmt lint typecheck test check
 
 help:
-	@echo "make install    Install locked dependencies, Playwright Chromium, and the git pre-commit file guard"
+	@echo "make setup      First time on a laptop: project venv, locked dependencies, then the production UI"
+	@echo "make install    Create backend/.venv with uv-managed Python 3.12 and install locked dependencies"
 	@echo "make build      Production UI into the Python package (HR runtime does not need Node)"
 	@echo "make guard      Refuse tracked documents, images, data files, and logs"
 	@echo "make dev        Run backend (127.0.0.1:8765) and frontend (127.0.0.1:5173)"
@@ -18,8 +19,12 @@ help:
 	@echo "make eval       Synthetic metadata-only evaluation (never authorized / real CVs)"
 	@echo "make check      guard + lint + typecheck + build + test (quality gate)"
 
+setup: install build
+
 install: hooks
-	cd $(BACKEND) && uv sync --locked
+	cd $(BACKEND) && uv python install 3.12
+	cd $(BACKEND) && uv venv --python 3.12 --managed-python --allow-existing .venv
+	cd $(BACKEND) && uv sync --locked --python 3.12 --managed-python
 	cd $(FRONTEND) && npm ci
 	cd $(FRONTEND) && npx playwright install chromium
 

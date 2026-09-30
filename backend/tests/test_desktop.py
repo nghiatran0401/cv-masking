@@ -94,3 +94,31 @@ def test_launcher_script_stays_on_loopback() -> None:
     assert ".".join(["0"] * 4) not in text
     assert "https://" not in text
     assert os.access(script, os.X_OK)
+
+
+def test_windows_launcher_stays_on_loopback() -> None:
+    root = Path(__file__).resolve().parents[2] / "scripts"
+    launcher = (root / "cv-masking.ps1").read_text(encoding="utf-8")
+    setup = (root / "setup-windows.ps1").read_text(encoding="utf-8")
+    starter = (root / "cv-masking.bat").read_text(encoding="utf-8")
+    assert "--desktop" in launcher
+    assert r"backend\.venv\Scripts\python.exe" in launcher
+    assert "uv venv" in setup
+    assert "cv-masking.ps1" in starter
+    for text in (launcher, setup, starter):
+        assert ".".join(["0"] * 4) not in text
+        assert "https://" not in text
+
+
+def test_open_browser_on_windows_uses_the_registered_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("cv_masking.desktop.sys.platform", "win32")
+
+    def startfile(url: str) -> None:
+        opened.append(url)
+
+    monkeypatch.setattr("cv_masking.desktop.os.startfile", startfile, raising=False)
+    open_loopback_browser(8765, "token_value")
+    assert opened == ["http://127.0.0.1:8765/?bootstrap=token_value"]

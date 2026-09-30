@@ -37,8 +37,21 @@ DATABASE_NAME: Final = "jobs.sqlite3"
 SIDE_FILE_SUFFIXES: Final = ("-wal", "-shm")
 BUSY_TIMEOUT_SECONDS: Final = 5.0
 
-_CREATE_FILE: Final = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
-_OPEN_CHECK: Final = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+_CREATE_FILE: Final = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+_OPEN_CHECK: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 _PRAGMAS: Final = (
     "PRAGMA foreign_keys = ON",
     "PRAGMA secure_delete = ON",
@@ -296,9 +309,9 @@ class SqliteMetadataStore:
 
     @classmethod
     def open(cls, root: StorageRoot) -> "SqliteMetadataStore":
-        with root.open_metadata() as dir_fd:
+        with root.open_metadata() as directory:
             try:
-                os.close(os.open(DATABASE_NAME, _CREATE_FILE, FILE_MODE, dir_fd=dir_fd))
+                os.close(directory.open(DATABASE_NAME, _CREATE_FILE, FILE_MODE))
             except FileExistsError:
                 pass
             except OSError as error:
@@ -396,10 +409,10 @@ class SqliteMetadataStore:
 
     def _check_files(self) -> None:
         """The database and its side files must be private regular files owned by this user."""
-        with self._root.open_metadata() as dir_fd:
+        with self._root.open_metadata() as directory:
             for suffix in ("", *SIDE_FILE_SUFFIXES):
                 try:
-                    fd = os.open(DATABASE_NAME + suffix, _OPEN_CHECK, dir_fd=dir_fd)
+                    fd = directory.open(DATABASE_NAME + suffix, _OPEN_CHECK)
                 except FileNotFoundError as error:
                     if suffix:
                         continue

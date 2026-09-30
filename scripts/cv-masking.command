@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="$ROOT/backend/.venv/bin/python"
 UI="$ROOT/backend/src/cv_masking/static/index.html"
 if [[ ! -x "$PYTHON" ]]; then
-  echo "Python environment missing. In Terminal: cd \"$ROOT\" && make install && make build" >&2
+  echo "Python environment missing. In Terminal: cd \"$ROOT\" && make setup" >&2
   exit 1
 fi
 if [[ ! -f "$UI" ]]; then

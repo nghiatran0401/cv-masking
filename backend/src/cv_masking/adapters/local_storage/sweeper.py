@@ -6,8 +6,6 @@ Symlinks are removed, never followed.
 """
 
 import logging
-import os
-import shutil
 import stat
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -16,6 +14,7 @@ from cv_masking.adapters.local_storage.root import (
     OBJECT_NAME_RE,
     TEMP_NAME_RE,
     WORK_NAME_RE,
+    StorageDir,
     StorageRoot,
     StoreKind,
 )
@@ -53,9 +52,9 @@ class LocalStorageSweeper:
             raise InvariantError("sweep time must be a timezone-aware UTC datetime")
         counts = dict.fromkeys(("temporary", "work", "unexpected", "failed"), 0)
         for kind in StoreKind:
-            with self._root.open_kind(kind) as dir_fd:
-                for name in os.listdir(dir_fd):
-                    outcome = self._sweep_entry(dir_fd, kind, name, now)
+            with self._root.open_kind(kind) as directory:
+                for name in directory.listdir():
+                    outcome = self._sweep_entry(directory, kind, name, now)
                     if outcome is not None:
                         counts[outcome] += 1
         report = SweepReport(**counts)
@@ -70,9 +69,11 @@ class LocalStorageSweeper:
         return report
 
     @staticmethod
-    def _sweep_entry(dir_fd: int, kind: StoreKind, name: str, now: datetime) -> str | None:
+    def _sweep_entry(
+        directory: StorageDir, kind: StoreKind, name: str, now: datetime
+    ) -> str | None:
         try:
-            info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            info = directory.stat(name)
         except FileNotFoundError:
             return None
         classified = _classify(kind, name, info.st_mode)
@@ -83,9 +84,9 @@ class LocalStorageSweeper:
             return None
         try:
             if stat.S_ISDIR(info.st_mode):
-                shutil.rmtree(name, dir_fd=dir_fd)
+                directory.rmtree(name)
             else:
-                os.unlink(name, dir_fd=dir_fd)
+                directory.unlink(name)
         except FileNotFoundError:
             return None
         except OSError:

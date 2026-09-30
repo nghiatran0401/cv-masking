@@ -13,6 +13,7 @@ from cv_masking.adapters.local_storage.root import (
     FILE_MODE,
     OBJECT_MODE,
     OBJECT_NAME_RE,
+    StorageDir,
     StorageRoot,
     StoreKind,
     object_name,
@@ -33,8 +34,21 @@ from cv_masking.ports.storage import (
 logger = logging.getLogger("cv_masking.storage")
 
 _READ_CHUNK: Final = 64 * 1024
-_OPEN_READ: Final = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
-_CREATE_TEMP: Final = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+_OPEN_READ: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+_CREATE_TEMP: Final = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 
 
 class _Sink:
@@ -64,10 +78,10 @@ class _Sink:
         return Sha256Digest(self._hash.hexdigest())
 
 
-def _discard(dir_fd: int, name: str) -> None:
+def _discard(directory: StorageDir, name: str) -> None:
     """Best-effort removal during failure handling; leftovers are swept by age."""
     try:
-        os.unlink(name, dir_fd=dir_fd)
+        directory.unlink(name)
     except FileNotFoundError:
         return
     except OSError:
@@ -95,23 +109,23 @@ class _LocalObjectStore:
         if not 1 <= max_bytes <= HARD_MAX_FILE_BYTES:
             raise StorageError(ErrorCode.STORAGE_WRITE_FAILED)
         temp = f".{uuid4().hex}.part"
-        with self._root.open_kind(self._kind) as dir_fd:
+        with self._root.open_kind(self._kind) as directory:
             linked = False
             try:
                 try:
-                    fd = os.open(temp, _CREATE_TEMP, FILE_MODE, dir_fd=dir_fd)
+                    fd = directory.open(temp, _CREATE_TEMP, FILE_MODE)
                     sink = self._fill(fd, producer, max_bytes)
-                    os.link(temp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd, follow_symlinks=False)
+                    directory.link(temp, name)
                     linked = True
-                    os.fsync(dir_fd)
+                    directory.fsync()
                 except OSError as error:
                     raise StorageError(ErrorCode.STORAGE_WRITE_FAILED) from error
             except BaseException:
                 if linked:
-                    _discard(dir_fd, name)
+                    _discard(directory, name)
                 raise
             finally:
-                _discard(dir_fd, temp)
+                _discard(directory, temp)
         logger.info("stored %s object %s", self._kind, ref)
         return StoredObject(ref, document_format, sink.digest(), sink.size)
 
@@ -122,15 +136,16 @@ class _LocalObjectStore:
             if sink.size == 0:
                 raise StorageError(ErrorCode.STORAGE_WRITE_FAILED)
             file.flush()
-            os.fchmod(file.fileno(), OBJECT_MODE)
+            if hasattr(os, "fchmod"):
+                os.fchmod(file.fileno(), OBJECT_MODE)
             os.fsync(file.fileno())
         return sink
 
     def open(self, ref: ObjectRef, document_format: DocumentFormat) -> BinaryIO:
         name = object_name(ref, document_format)
-        with self._root.open_kind(self._kind) as dir_fd:
+        with self._root.open_kind(self._kind) as directory:
             try:
-                fd = os.open(name, _OPEN_READ, dir_fd=dir_fd)
+                fd = directory.open(name, _OPEN_READ)
             except FileNotFoundError as error:
                 raise StorageError(ErrorCode.STORAGE_INTEGRITY_FAILED) from error
             except OSError as error:
@@ -154,9 +169,9 @@ class _LocalObjectStore:
 
     def delete(self, ref: ObjectRef, document_format: DocumentFormat) -> bool:
         name = object_name(ref, document_format)
-        with self._root.open_kind(self._kind) as dir_fd:
+        with self._root.open_kind(self._kind) as directory:
             try:
-                info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                info = directory.stat(name)
             except FileNotFoundError:
                 return False
             except OSError as error:
@@ -164,7 +179,7 @@ class _LocalObjectStore:
             if stat.S_ISDIR(info.st_mode):
                 raise StorageError(ErrorCode.STORAGE_PATH_REJECTED)
             try:
-                os.unlink(name, dir_fd=dir_fd)
+                directory.unlink(name)
             except FileNotFoundError:
                 return False
             except OSError as error:
@@ -174,12 +189,12 @@ class _LocalObjectStore:
 
     def list_objects(self) -> tuple[ObjectListing, ...]:
         listings: list[ObjectListing] = []
-        with self._root.open_kind(self._kind) as dir_fd:
-            for name in os.listdir(dir_fd):
+        with self._root.open_kind(self._kind) as directory:
+            for name in directory.listdir():
                 if OBJECT_NAME_RE.fullmatch(name) is None:
                     continue
                 try:
-                    info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                    info = directory.stat(name)
                 except FileNotFoundError:
                     continue
                 except OSError as error:

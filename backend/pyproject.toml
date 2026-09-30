@@ -75,6 +75,8 @@ ignore_missing_imports = true
 [tool.pyrefly]
 # Match pytest's pythonpath. The src layout otherwise hides test helpers such as service_helpers.
 search-path = ["src", "tests", "tests/domain", "tests/application"]
+# The editor looks up `python` on PATH and fails; this venv has fastapi and the other libraries.
+python-interpreter-path = ".venv/bin/python"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

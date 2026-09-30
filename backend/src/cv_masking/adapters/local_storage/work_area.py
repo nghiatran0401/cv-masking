@@ -1,6 +1,4 @@
 import logging
-import os
-import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,9 +22,9 @@ class LocalWorkArea:
     @contextmanager
     def attempt(self) -> Iterator[Path]:
         name = str(uuid4())
-        with self._root.open_kind(StoreKind.WORK) as dir_fd:
+        with self._root.open_kind(StoreKind.WORK) as directory:
             try:
-                os.mkdir(name, DIR_MODE, dir_fd=dir_fd)
+                directory.mkdir(name, DIR_MODE)
             except OSError as error:
                 raise StorageError(ErrorCode.STORAGE_WRITE_FAILED) from error
         try:
@@ -38,8 +36,8 @@ class LocalWorkArea:
 
     def _remove(self, name: str, *, raise_on_failure: bool) -> None:
         try:
-            with self._root.open_kind(StoreKind.WORK) as dir_fd:
-                shutil.rmtree(name, dir_fd=dir_fd)
+            with self._root.open_kind(StoreKind.WORK) as directory:
+                directory.rmtree(name)
         except FileNotFoundError:
             return
         except (OSError, StorageError) as error:

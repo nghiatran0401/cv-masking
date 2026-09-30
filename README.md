@@ -1,12 +1,19 @@
 # Che thông tin CV (bản thử nghiệm trên máy)
 
-Công cụ này giúp nhân sự ngân hàng che thông tin cá nhân trong CV. Ứng dụng chỉ
-chạy trên máy Mac của người dùng nhân sự. Tệp CV ở lại trên laptop đó. Ứng dụng
-không gửi CV tới dịch vụ nào trên internet. Windows chưa được hỗ trợ.
+Công cụ này giúp nhân sự ngân hàng che thông tin cá nhân trong CV. Ứng dụng chạy
+trên máy Mac hoặc Windows của người dùng nhân sự. Tệp CV ở lại trên laptop đó.
+Ứng dụng không gửi CV tới dịch vụ nào trên internet.
 
-Nhân sự mở ứng dụng bằng cách bấm đúp `scripts/cv-masking.command`. Xem
-[docs/install.md](docs/install.md) và
-[docs/operator-guide.md](docs/operator-guide.md).
+Trên Mac, nhân sự mở ứng dụng bằng cách bấm đúp `scripts/cv-masking.command`.
+Lần đầu, nếu macOS chặn tệp, bấm chuột phải rồi chọn Open.
+
+Trên Windows, lần đầu mở PowerShell trong thư mục dự án và chạy
+`powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`.
+Lệnh này không dùng GNU Make. Nó tải Python 3.12 qua uv, tạo `backend\.venv`
+chỉ cho dự án này, rồi dựng giao diện. Những lần sau, bấm đúp
+`scripts\cv-masking.bat`.
+
+Ứng dụng mở tại <http://127.0.0.1:8765>.
 
 ## Cách hoạt động
 
@@ -25,7 +32,8 @@ các tệp đó, rồi chọn thư mục hoặc kéo thả. Máy chủ không g�
 không lưu liên kết.
 Kỹ thuật: màn hình gửi tệp đã chọn, hoặc liên kết đã dán, tới máy chủ trên máy
 này. Máy chủ chỉ tải từ máy chủ tệp công ty đó. Máy chủ kiểm tra chứng chỉ của
-máy chủ tệp và cũng tin các chứng chỉ đã cài trên Mac này.
+máy chủ tệp. Trên Mac, máy chủ cũng tin các chứng chỉ đã cài trong Keychain.
+Trên Windows, máy chủ tin các chứng chỉ đã cài trong Windows.
 SQLite chỉ lưu trạng thái công việc và số lượng. SQLite không lưu chữ cá nhân
 hay liên kết.
 
@@ -90,15 +98,19 @@ Tệp làm việc tạm được gỡ sau mỗi công việc.
   tệp Word có macro bị từ chối.
 - Ứng dụng không bảo vệ laptop khỏi phần mềm độc hại, tiện ích trình duyệt, hoặc
   bản sao lưu. Dán CV vào công cụ AI như Cursor sẽ gửi chữ đó ra khỏi laptop.
+- Trên Windows, thư mục `data/` nên nằm trong hồ sơ người dùng. Windows không
+  có cùng kiểu khóa quyền thư mục như Mac. Ứng dụng vẫn từ chối symlink và
+  junction.
 
 ## Phát triển (macOS)
 
-Cần [uv](https://docs.astral.sh/uv/) từ 0.10.6 trở lên (uv cài Python 3.12),
-Node.js từ 24 trở lên kèm npm, và GNU Make.
+Cần [uv](https://docs.astral.sh/uv/) từ 0.10.6 trở lên, Node.js từ 24 trở lên
+kèm npm, và GNU Make. Không cần cài Python cho cả máy. `make install` tải
+Python 3.12 qua uv và tạo `backend/.venv` chỉ cho dự án này.
 
 ```bash
-uv python install 3.12   # một lần
-make install             # khóa phiên bản thư viện, Playwright Chromium, file guard của pre-commit
+make setup               # lần đầu trên laptop: venv, thư viện, rồi giao diện bản chạy
+make install             # tạo backend/.venv, khóa phiên bản thư viện, Playwright Chromium, file guard
 make build               # giao diện bản chạy vào gói Python
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
 make check               # file guard + lint + kiểm tra kiểu + build giao diện + kiểm thử
@@ -111,18 +123,6 @@ vụ màn hình từ <http://127.0.0.1:8765> và không khởi động Node.
 Cả hai máy chủ chỉ lắng nghe trên `127.0.0.1`. Đặt `CV_MASKING_PORT` để đổi
 cổng backend (proxy của Vite kỳ vọng 8765).
 
-## Tài liệu
-
-| Tài liệu | Nội dung |
-|---|---|
-| [docs/install.md](docs/install.md) | Cài đặt, chạy, gỡ cài đặt |
-| [docs/operator-guide.md](docs/operator-guide.md) | Cách nhân sự dùng ứng dụng |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Lỗi trình khởi chạy và mã lỗi |
-| [docs/masking-policy.md](docs/masking-policy.md) | Những gì được che |
-| [docs/error-codes.md](docs/error-codes.md) | Mã lỗi và trạng thái tài liệu |
-| [docs/supported-pdf.md](docs/supported-pdf.md) | PDF và Word nào được nhận |
-| [docs/data-retention.md](docs/data-retention.md) | Tệp được lưu ở đâu, và cách dọn dẹp |
-| [SECURITY.md](SECURITY.md) | Quy tắc bảo mật khi chạy và khi xây dựng ứng dụng |
-| [THREAT_MODEL.md](THREAT_MODEL.md) | Ứng dụng bảo vệ những gì, và những gì không bảo vệ |
-| [docs/product-scope.md](docs/product-scope.md) | Phạm vi, việc ngoài phạm vi, nhật ký quyết định |
-| [AGENTS.md](AGENTS.md) | Quy tắc cho tác nhân triển khai |
+Windows không dùng Makefile. Cài và chạy bằng hai tệp trong `scripts/`:
+`setup-windows.ps1` một lần, rồi `cv-masking.bat`. Cần uv từ 0.10.6 và Node.js
+từ 24, không cần GNU Make và không cần cài Python cho cả máy.

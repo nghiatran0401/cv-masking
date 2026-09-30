@@ -1,18 +1,23 @@
-"""macOS desktop start: one process, loopback health wait, default browser, lock file."""
+"""Desktop start: one process, loopback health wait, default browser, lock file."""
 
 from __future__ import annotations
 
-import fcntl
 import http.client
 import logging
 import os
 import re
 import secrets
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from time import monotonic, sleep
 from typing import Final
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 import uvicorn
 
@@ -31,7 +36,7 @@ logger = logging.getLogger("cv_masking.desktop")
 
 
 class InstanceLock:
-    """Exclusive flock so a second double-click cannot bind the same port."""
+    """Exclusive lock so a second launch cannot bind the same port."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -42,18 +47,21 @@ class InstanceLock:
         self._path.parent.chmod(0o700)
         handle = os.open(
             self._path,
-            os.O_CREAT | os.O_RDWR | os.O_CLOEXEC,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0),
             _PID_MODE,
         )
         try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            _lock_exclusive(handle)
+        except OSError as error:
             os.close(handle)
-            return False
-        os.ftruncate(handle, 0)
-        os.write(handle, str(os.getpid()).encode("ascii"))
-        os.fsync(handle)
+            if sys.platform == "win32" or isinstance(error, BlockingIOError):
+                return False
+            raise
+        if sys.platform != "win32":
+            os.ftruncate(handle, 0)
+            os.write(handle, str(os.getpid()).encode("ascii"))
         self._path.chmod(_PID_MODE)
+        os.fsync(handle)
         self._fd = handle
         return True
 
@@ -62,7 +70,7 @@ class InstanceLock:
         self._fd = None
         if handle is None:
             return
-        fcntl.flock(handle, fcntl.LOCK_UN)
+        _unlock(handle)
         os.close(handle)
 
 
@@ -99,8 +107,34 @@ def wait_health(port: int, timeout: float = HEALTH_WAIT_SECONDS) -> None:
     raise TimeoutError("health wait expired")
 
 
+def _lock_exclusive(handle: int) -> None:
+    if sys.platform == "win32":
+        if os.lseek(handle, 0, os.SEEK_END) < 1:
+            os.write(handle, b"\0")
+        os.lseek(handle, 0, os.SEEK_SET)
+        msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+        os.lseek(handle, 0, os.SEEK_SET)
+        os.write(handle, str(os.getpid()).encode("ascii"))
+        return
+    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock(handle: int) -> None:
+    if sys.platform == "win32":
+        os.lseek(handle, 0, os.SEEK_SET)
+        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def open_loopback_browser(port: int, bootstrap: str | None) -> None:
     url = loopback_ui_url(port, bootstrap)
+    if sys.platform == "win32":
+        startfile = getattr(os, "startfile", None)
+        if startfile is None:
+            raise OSError("browser open is unavailable")
+        startfile(url)
+        return
     subprocess.run([OPEN_BIN, url], check=True, timeout=10)
 
 
@@ -109,6 +143,8 @@ def run_desktop(*, open_browser: bool = True, settings: Settings | None = None) 
     if chosen.host != LOOPBACK_HOST:
         raise SystemExit("desktop mode refuses a non-loopback host")
     if resolve_static_directory() is None:
+        if sys.platform == "win32":
+            raise SystemExit(r"UI build missing; run scripts\setup-windows.ps1")
         raise SystemExit("UI build missing; run make build")
     if probe_health(chosen.port):
         logger.info("already running; opening the browser")
