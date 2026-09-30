@@ -13,8 +13,9 @@ A single-user web app running on the HR user's bank-managed macOS laptop
 process (D-33) validates, detects, redacts, and independently verifies each CV (PDF or
 DOCX; each is redacted and verified in its own format). Files
 live in the project's `data/` folder (D-22); job metadata lives in SQLite at
-`data/metadata/jobs.sqlite3` (D-25). No component
-makes network calls beyond loopback.
+`data/metadata/jobs.sqlite3` (D-25). The only runtime network call beyond
+loopback is an HTTPS GET of CV files from `data.ehiring.ehr.vib`, and only
+after HR clicks **Tải các liên kết** (D-50).
 
 ## 2. Assets
 
@@ -47,7 +48,7 @@ makes network calls beyond loopback.
 
 ```mermaid
 flowchart LR
-    subgraph TB0["TB-0: Outside the laptop (must receive nothing at runtime)"]
+    subgraph TB0["TB-0: Outside the laptop (no CV upload, no telemetry)"]
         NET["Internet / LAN / Cloud / LLMs"]
     end
 
@@ -99,12 +100,12 @@ flowchart LR
     SVC --> LOG
     EVIL -.->|"cross-site requests (blocked)"| API
     CURSOR --- REPO
-    LAPTOP -.-x|"no runtime egress"| NET
+    LAPTOP -.->|"HTTPS GET of one allowlisted file host"| NET
 ```
 
 | Boundary | Crossing | Control |
 |---|---|---|
-| TB-0 | Anything → network | No outbound code paths; no telemetry deps; tests block sockets (Stage 1+); no remote assets in build (Stage 15). |
+| TB-0 | Server → network | One outbound path: HTTPS GET of `data.ehiring.ehr.vib` after **Tải các liên kết** (D-50). Exact host, port 443, no cookies, no off-host redirect, size cap, certificate verification using the public CAs plus the Mac keychains. Verification is not disabled. No telemetry deps. Tests inject a fake connection and do not open a socket. No remote assets in the build (Stage 15). |
 | TB-1 → TB-2 | Browser → API | Loopback bind; Host allowlist; Origin check; startup token + CSRF (Stage 14); size limits. |
 | TB-2 → TB-3 | API → parser of untrusted PDFs and DOCX | One separate worker process (multiprocessing `spawn`, same interpreter, anonymous pipe, no shell or socket); per-document time budget enforced by ending the process; replies are JSON rebuilt through domain constructors (never unpickled) with bounded sizes; page/size/decompression limits; parser exceptions mapped to safe codes (Stage 12). |
 | TB-3 → TB-4 | Worker → disk | The worker only reads stored inputs and outputs; the API process stores outputs and writes all metadata. Random-UUID paths; containment; atomic writes; owner-only perms. |
@@ -130,7 +131,7 @@ flowchart LR
 | T-12 | Tampering | Path traversal or symlink escape via IDs or archive entries. | Server-generated UUIDs only; containment check; symlink refusal; ZIP built from server paths. | 3, 13, 14 |
 | T-13 | Info disclosure | Temp/work files left behind after crash. | Atomic writes; `finally` cleanup; startup + periodic sweeper (1 h for leftovers). | 3, 12 |
 | T-14 | Info disclosure | ZIP includes inputs or work files. | Server ZIP is COMPLETED outputs only. The browser `output.zip` may include original File bytes from this tab (D-48); the UI tells HR to share only `masked_` files. | 13 |
-| T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote URLs; CSP `default-src 'self'`; `frame-src 'self' blob:` only so a masked PDF blob can be iframed; `object-src` stays `none`; build scan for URLs. | 1, 13, 15 |
+| T-15 | Info disclosure | Frontend loads remote fonts/scripts or sends telemetry. | No remote fonts or scripts; CSP `default-src 'self'`; `connect-src` is `'self'` plus `https://data.ehiring.ehr.vib` only, so a script on this page cannot POST CV bytes to an arbitrary site (D-50); `frame-src 'self' blob:` only so a masked PDF blob can be iframed; `object-src` stays `none`; build scan for URLs. | 1, 13, 15 |
 | T-16 | Tampering | Supply-chain compromise of a dependency. | Minimal deps; lockfiles with hashes; justification per dep; no install scripts where avoidable. | 1+ |
 | T-17 | Info disclosure | Developer pastes real CV into Cursor, or agent reads runtime data. | SECURITY.md rules; synthetic-only fixtures; `.cursorignore`; runtime root outside repo. | 0 |
 | T-18 | Repudiation | Unclear which policy/version produced an output. | Job records policy version, detector versions, software version. | 2, 4 |
@@ -183,5 +184,12 @@ flowchart LR
     tab into `output/candidate <name>/`. Those names and originals exist only
     in this browser tab and in     the laptop Downloads folder; they are not stored
     by the server. Do not share the original copies.
-21. Pasted source URLs exist only in this tab. Opening them uses the HR browser
-    on the bank network. The local server does not download them.
+21. **Tải các liên kết** sends each pasted URL to the local API, then the server
+    GETs `data.ehiring.ehr.vib` only (D-50). The URL is not written to SQLite,
+    logs, or disk. The browser login cookie is not sent, so a link that only
+    works in a logged-in browser fails. Redirects to any other host are refused.
+    That host's DNS is trusted for the name. A downloaded file is a normal input.
+    Its display name stays in this browser tab, so the bulk ZIP has no original
+    File for that row, and **Thử lại** cannot resend it from the tab.
+    `connect-src` still allows only that one host, so a script on this page
+    cannot send CV bytes to an arbitrary site.

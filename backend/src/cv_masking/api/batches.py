@@ -19,9 +19,18 @@ from cv_masking.domain.errors import InvariantError
 from cv_masking.domain.formats import DocumentFormat
 from cv_masking.domain.ids import BatchId, DocumentId
 from cv_masking.domain.limits import READ_CHUNK_BYTES
+from cv_masking.domain.source_url import MAX_SOURCE_URL_LENGTH
 from cv_masking.domain.verification import NO_RESIDUAL, ResidualCounts
 
 router = APIRouter(prefix="/api/batches")
+
+
+class SourceLinkRequest(BaseModel):
+    """One pasted CV URL. The value is not stored and is not copied into the response."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    url: str = Field(min_length=1, max_length=MAX_SOURCE_URL_LENGTH)
 
 
 class CreateBatchRequest(BaseModel):
@@ -201,6 +210,21 @@ def upload_document(
         content_type=file.content_type,
         replaces=None if replaces is None else _document_id(replaces),
     )
+    if runtime.worker is not None:
+        runtime.worker.notify()
+    return _document_view(job)
+
+
+@router.post("/{batch_id}/source-links", status_code=201)
+def import_source_link(
+    batch_id: UUID,
+    body: SourceLinkRequest,
+    runtime: Annotated[Runtime, Depends(_runtime)],
+) -> DocumentView:
+    importer = runtime.source_imports
+    if importer is None:
+        raise ApiError(ErrorCode.INTERNAL_ERROR, 500)
+    job = importer.import_url(_batch_id(batch_id), body.url)
     if runtime.worker is not None:
         runtime.worker.notify()
     return _document_view(job)

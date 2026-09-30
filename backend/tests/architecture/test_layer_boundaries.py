@@ -79,6 +79,7 @@ def test_only_the_sqlite_adapter_imports_sqlite() -> None:
 
 WORKER_PROCESS = SRC / "adapters" / "worker" / "process.py"
 DESKTOP = SRC / "desktop.py"
+CV_SOURCE_HTTP = SRC / "adapters" / "http" / "cv_source.py"
 _OS_PROCESS_CALLS = {"system", "popen", "fork", "forkpty", "posix_spawn", "posix_spawnp"}
 
 
@@ -89,6 +90,11 @@ def test_no_source_module_starts_subprocesses_or_opens_sockets() -> None:
             assert "subprocess" in imported
             assert "http.client" in imported
             assert not imported & (NETWORK_AND_PROCESS - {"subprocess", "http.client"})
+            continue
+        if path == CV_SOURCE_HTTP:
+            assert "http.client" in imported
+            assert "subprocess" in imported
+            assert not imported & (NETWORK_AND_PROCESS - {"http.client", "subprocess"})
             continue
         assert not imported & NETWORK_AND_PROCESS, path.name
 

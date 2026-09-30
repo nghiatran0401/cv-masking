@@ -7,10 +7,13 @@ with [AGENTS.md](AGENTS.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 ## 1. Non-negotiable runtime rules
 
 - The server binds to `127.0.0.1` only. `0.0.0.0`, `::`, LAN IPs, and hostnames are refused at startup.
-- No outbound network calls of any kind: no AWS or cloud storage, no telemetry, analytics,
-  crash reporting, update checks, remote fonts/CDNs, or external AI/LLM/API calls.
-  FastAPI never fetches CV URLs. HR may paste company-intranet links and open them in
-  this browser (D-49); those URLs stay in the tab and are never stored.
+- No outbound network calls from the server except one case: after HR clicks
+  **Tải các liên kết**, the server GETs `https://data.ehiring.ehr.vib` only (D-50).
+  No AWS or cloud storage, telemetry, analytics, crash reporting, update checks,
+  remote fonts/CDNs, or external AI/LLM/API calls. The pasted URL is sent to the
+  local API for that request and is not stored. Redirects to any other host are
+  refused. The browser login cookie is not sent. TLS verification stays on and
+  also trusts public certificates already installed in the Mac keychains.
 - Inputs are never overwritten. Stored outputs are always new files named `redacted-<uuid>.pdf`
   or `redacted-<uuid>.docx`, matching the input format. The UI saves single-file downloads as
   `masked_<original filename>` from browser memory only. The bulk ZIP may also include the

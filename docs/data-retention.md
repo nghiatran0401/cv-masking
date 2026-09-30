@@ -130,7 +130,8 @@ by file permissions (A-2, A-3).
 | SQLite job metadata (IDs, states, counts, hashes, codes, timestamps) | data/metadata/jobs.sqlite3 | HR purges the batch: the batch row and every document row, count, and code are deleted, with no tombstone (D-11, D-25). Removing a document from an open batch deletes its rows. |
 | Logs (metadata only: IDs, codes, counts, durations) | `data/logs/app.log` (10 MiB, 7 backups) | Rotated; leftover files stay until HR deletes `data/`. |
 | Original filenames (display and download names) | Browser tab memory | Tab closed or reloaded. Never written to disk by the server. |
-| Pasted CV source URLs | Browser tab memory | Tab closed, reloaded, new batch, or purge. Never sent to the API. |
+| Pasted CV source URLs | Browser tab, and the body of one local API request per link while **Tải các liên kết** runs | Not written to SQLite, logs, or disk. The request body is dropped when the request ends. The tab copy is dropped when the tab closes, reloads, or HR starts a new batch or purges. |
+| Files fetched by **Tải các liên kết** | data/inputs, same as a chosen file | Same as an uploaded input copy (D-50). |
 | Extracted text, detected values, decompressed DOCX parts | Worker process memory | Dropped when the document's verification ends, or when the worker process is ended (timeout, crash, shutdown); never written to disk by the app. |
 
 There is no age-based deletion of inputs or outputs (D-23). HR is responsible for deleting

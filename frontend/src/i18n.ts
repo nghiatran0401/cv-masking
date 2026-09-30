@@ -20,6 +20,9 @@ type MessageTree = {
   urlList: string;
   urlPaste: string;
   urlHelp: string;
+  downloadLinks: string;
+  downloadProgress: string;
+  downloadFailed: string;
   browse: string;
   browseFolder: string;
   uploading: string;
@@ -77,7 +80,10 @@ export const MESSAGES: Record<Language, MessageTree> = {
     urlList: "Danh sách liên kết CV",
     urlPaste: "Dán URL, mỗi dòng một liên kết",
     urlHelp:
-      "Không lấy CV từ liên kết mạng. Dán URL (chỉ mở được trên mạng công ty), mở từng liên kết trên trình duyệt này, lưu PDF/DOCX vào một thư mục, rồi chọn thư mục hoặc kéo thả.",
+      "Dán liên kết https từ máy chủ tệp công ty. Bấm Tải các liên kết để máy này tải các tệp và thêm vào lô. Liên kết phải mở được mà không cần đăng nhập trên trình duyệt. Máy này chỉ tải từ máy chủ tệp công ty và không gửi CV đi nơi khác.",
+    downloadLinks: "Tải các liên kết",
+    downloadProgress: "Đang tải {current}/{total}",
+    downloadFailed: "Không tải được: {names}",
     browse: "Chọn tệp",
     browseFolder: "Chọn thư mục",
     uploading: "Đang tải lên",
@@ -131,6 +137,8 @@ export const MESSAGES: Record<Language, MessageTree> = {
       UPLOAD_BATCH_SIZE_LIMIT: "Lô đã đủ dung lượng tối đa.",
       UPLOAD_DUPLICATE: "Tệp trùng với một tệp khác trong lô.",
       UPLOAD_MALFORMED_REQUEST: "Yêu cầu tải lên không hợp lệ. Thử lại.",
+      UPLOAD_SOURCE_UNAVAILABLE:
+        "Không tải được liên kết từ máy chủ tệp. Liên kết có thể cần đăng nhập trình duyệt. Bấm Tải các liên kết để thử lại.",
       UPLOAD_TIMEOUT: "Tải lên quá thời gian. Thử lại.",
       UPLOAD_BATCH_CLOSED: "Lô không còn nhận tệp mới.",
       PDF_MALFORMED: "PDF không đọc được.",
@@ -231,7 +239,10 @@ export const MESSAGES: Record<Language, MessageTree> = {
     urlList: "CV link list",
     urlPaste: "Paste URLs, one per line",
     urlHelp:
-      "This app does not fetch CVs from URLs. Paste links that only work on the company network, open each in this browser, save the PDF/DOCX files into a folder, then choose the folder or drop the files.",
+      "Paste https links from the company file host. Click Download links and this laptop downloads the files and adds them to the batch. The link must open without a browser login. This laptop fetches only the company file host and does not send CVs anywhere else.",
+    downloadLinks: "Download links",
+    downloadProgress: "Downloading {current}/{total}",
+    downloadFailed: "Could not download: {names}",
     browse: "Choose files",
     browseFolder: "Choose folder",
     uploading: "Uploading",
@@ -288,6 +299,8 @@ export const MESSAGES: Record<Language, MessageTree> = {
       UPLOAD_BATCH_SIZE_LIMIT: "The batch already has the maximum total size.",
       UPLOAD_DUPLICATE: "This file is already in the batch.",
       UPLOAD_MALFORMED_REQUEST: "The upload request was invalid. Try again.",
+      UPLOAD_SOURCE_UNAVAILABLE:
+        "Could not download the link from the file host. The link may need the browser login. Click Download links to try again.",
       UPLOAD_TIMEOUT: "The upload timed out. Try again.",
       UPLOAD_BATCH_CLOSED: "The batch is no longer accepting files.",
       PDF_MALFORMED: "The PDF could not be parsed.",

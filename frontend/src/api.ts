@@ -106,6 +106,17 @@ export function getBatch(batchId: string): Promise<BatchDetail> {
   return json(`/api/batches/${batchId}`);
 }
 
+export function importSourceLink(
+  batchId: string,
+  url: string,
+): Promise<DocumentView> {
+  return json(`/api/batches/${batchId}/source-links`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+}
+
 export function setMaskSalary(
   batchId: string,
   maskSalary: boolean,

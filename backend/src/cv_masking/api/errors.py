@@ -20,6 +20,7 @@ _UPLOAD_BAD_REQUEST = frozenset(
         ErrorCode.UPLOAD_SPOOFED_TYPE,
         ErrorCode.DOCX_MACRO_OR_TEMPLATE,
         ErrorCode.UPLOAD_MALFORMED_REQUEST,
+        ErrorCode.UPLOAD_SOURCE_UNAVAILABLE,
     }
 )
 _UPLOAD_CONFLICT = frozenset({ErrorCode.UPLOAD_DUPLICATE, ErrorCode.UPLOAD_BATCH_CLOSED})

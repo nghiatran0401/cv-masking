@@ -21,6 +21,7 @@ import {
   downloadUrl,
   fetchMaskedFile,
   getBatch,
+  importSourceLink,
   isPdfBlob,
   openSession,
   purgeBatch,
@@ -30,6 +31,7 @@ import {
   startBatch,
   uploadDocument,
 } from "./api";
+import { isDownloadableCvUrl } from "./cvDownload";
 import {
   ALL_MASKED_ZIP_NAME,
   candidateArchiveLayout,
@@ -153,6 +155,16 @@ function newKey(): string {
   return crypto.randomUUID();
 }
 
+function fill(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  return template.replace(
+    /\{(\w+)\}/g,
+    (match, key: string) => values[key] ?? match,
+  );
+}
+
 export function App() {
   const fileInputId = useId();
   const folderInputId = useId();
@@ -166,6 +178,10 @@ export function App() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [downloadHint, setDownloadHint] = useState<string | null>(null);
+  const [linkNames, setLinkNames] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
   const t = MESSAGES[language];
 
   useEffect(() => {
@@ -215,17 +231,20 @@ export function App() {
   }, [batch, refresh]);
 
   const names = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map(linkNames);
     for (const item of locals) {
       if (item.documentId !== null) {
         map.set(item.documentId, item.file.name);
       }
     }
     return map;
-  }, [locals]);
+  }, [linkNames, locals]);
 
   const sourceLinks = useMemo(() => parseSourceLinks(urlDraft), [urlDraft]);
-
+  const downloadableLinks = useMemo(
+    () => sourceLinks.filter((link) => isDownloadableCvUrl(link.href)),
+    [sourceLinks],
+  );
   const changeLanguage = (next: Language): void => {
     setLanguage(next);
   };
@@ -310,6 +329,67 @@ export function App() {
     void applyFiles([...event.dataTransfer.files]);
   };
 
+  const onDownloadLinks = (): void => {
+    if (busy || downloadableLinks.length < 1) {
+      return;
+    }
+    const links = downloadableLinks;
+    setBusy(true);
+    setNotice(null);
+    setDownloadHint(null);
+    void (async () => {
+      const failed: string[] = [];
+      try {
+        const current = await ensureBatch();
+        for (let index = 0; index < links.length; index += 1) {
+          const link = links[index];
+          if (link === undefined) {
+            continue;
+          }
+          setDownloadHint(
+            fill(t.downloadProgress, {
+              current: String(index + 1),
+              total: String(links.length),
+            }),
+          );
+          try {
+            const uploaded = await importSourceLink(
+              current.batch_id,
+              link.href,
+            );
+            setLinkNames((prev) =>
+              new Map(prev).set(uploaded.document_id, link.label),
+            );
+          } catch (error: unknown) {
+            const code =
+              error instanceof ApiRequestError ? error.code : "INTERNAL_ERROR";
+            failed.push(`${link.label} (${messageForCode(language, code)})`);
+            if (
+              code === "UPLOAD_BATCH_FILE_LIMIT" ||
+              code === "UPLOAD_BATCH_SIZE_LIMIT" ||
+              code === "UPLOAD_BATCH_CLOSED"
+            ) {
+              break;
+            }
+          }
+        }
+        await refresh(current.batch_id);
+      } catch (error: unknown) {
+        setNotice(
+          error instanceof ApiRequestError
+            ? messageForCode(language, error.code)
+            : messageForCode(language, "INTERNAL_ERROR"),
+        );
+      } finally {
+        setDownloadHint(null);
+        setBusy(false);
+      }
+      if (failed.length > 0) {
+        setNotice(fill(t.downloadFailed, { names: failed.join(", ") }));
+      }
+    })();
+  };
+
   const toggleSalary = async (checked: boolean): Promise<void> => {
     setMaskSalaryState(checked);
     if (batch === null || batch.state !== "open") {
@@ -345,6 +425,8 @@ export function App() {
       const created = await createBatch(maskSalary);
       setLocals([]);
       setUrlDraft("");
+      setDownloadHint(null);
+      setLinkNames(new Map());
       await refresh(created.batch_id);
     } finally {
       setBusy(false);
@@ -361,6 +443,8 @@ export function App() {
       setBatch(null);
       setLocals([]);
       setUrlDraft("");
+      setDownloadHint(null);
+      setLinkNames(new Map());
     } finally {
       setBusy(false);
     }
@@ -570,6 +654,16 @@ export function App() {
             ))}
           </ol>
         ) : null}
+        <div className="buttons">
+          <button
+            type="button"
+            onClick={onDownloadLinks}
+            disabled={busy || downloadableLinks.length < 1}
+          >
+            {t.downloadLinks}
+          </button>
+        </div>
+        {downloadHint !== null ? <p role="status">{downloadHint}</p> : null}
       </section>
 
       <section

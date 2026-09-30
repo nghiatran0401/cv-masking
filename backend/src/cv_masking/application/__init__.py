@@ -5,6 +5,7 @@ from cv_masking.application.exports import ExportService, download_filename, zip
 from cv_masking.application.jobs import ORPHAN_GRACE, JobService, ReconcileReport
 from cv_masking.application.processing import DocumentPipeline
 from cv_masking.application.redaction import RedactionService
+from cv_masking.application.source_import import SourceImportService
 from cv_masking.application.uploads import UploadError, UploadLimits, UploadService
 from cv_masking.application.verification import VerificationService
 from cv_masking.application.worker import WorkerLoop, WorkerService
@@ -18,6 +19,7 @@ __all__ = [
     "JobService",
     "ReconcileReport",
     "RedactionService",
+    "SourceImportService",
     "UploadError",
     "UploadLimits",
     "UploadService",

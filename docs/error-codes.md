@@ -121,6 +121,7 @@ input is deleted at a terminal state, so a retry is always a fresh upload.
 | `UPLOAD_BATCH_SIZE_LIMIT` | T | Batch total size limit reached. |
 | `UPLOAD_DUPLICATE` | T | Same content hash already in this batch. |
 | `UPLOAD_MALFORMED_REQUEST` | R | Multipart request invalid or incomplete. |
+| `UPLOAD_SOURCE_UNAVAILABLE` | R | The allowlisted file host did not return the CV. The link was not added. Click **Tải các liên kết** again. A browser login cookie is not sent. |
 | `UPLOAD_TIMEOUT` | R | Upload did not finish within the request timeout. |
 | `UPLOAD_BATCH_CLOSED` | T | New extra files are refused once the batch has started. Replacing a FAILED row (**Thử lại**) is allowed. |
 
@@ -237,7 +238,7 @@ code. Too many requests return `429` with `SECURITY_RATE_LIMITED`.
 
 | Status | Codes |
 |---|---|
-| 400 | `UPLOAD_UNSUPPORTED_TYPE`, `UPLOAD_SPOOFED_TYPE`, `DOCX_MACRO_OR_TEMPLATE`, `UPLOAD_MALFORMED_REQUEST` |
+| 400 | `UPLOAD_UNSUPPORTED_TYPE`, `UPLOAD_SPOOFED_TYPE`, `DOCX_MACRO_OR_TEMPLATE`, `UPLOAD_MALFORMED_REQUEST`, `UPLOAD_SOURCE_UNAVAILABLE` |
 | 403 | `SECURITY_HOST_REJECTED`, `SECURITY_ORIGIN_REJECTED`, `SECURITY_TOKEN_INVALID` |
 | 408 | `UPLOAD_TIMEOUT` |
 | 409 | `UPLOAD_DUPLICATE`, `UPLOAD_BATCH_CLOSED` |

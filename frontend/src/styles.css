@@ -72,6 +72,10 @@ body {
   font-size: 1.05rem;
 }
 
+.url-import .buttons {
+  margin-top: 0.75rem;
+}
+
 .url-import textarea {
   display: block;
   width: 100%;

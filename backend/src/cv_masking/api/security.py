@@ -15,7 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from cv_masking.api.errors import error_response
 from cv_masking.api.ui import is_public_ui_path
-from cv_masking.config import DEFAULT_PORT, LOOPBACK_HOST, Settings
+from cv_masking.config import DEFAULT_PORT, LOOPBACK_HOST, SOURCE_CV_HOST, Settings
 from cv_masking.domain.codes import ErrorCode
 from cv_masking.domain.limits import HARD_MAX_FILE_BYTES
 
@@ -28,14 +28,16 @@ RATE_WINDOW_SECONDS: Final = 60.0
 RATE_LIMIT_MAX: Final = 240
 MAX_CONTENT_LENGTH: Final = HARD_MAX_FILE_BYTES + 1_048_576
 
+_CONTENT_SECURITY_POLICY: Final = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src 'self'; font-src 'self'; "
+    f"connect-src 'self' https://{SOURCE_CV_HOST}; "
+    "frame-src 'self' blob:; object-src 'none'; "
+    "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+)
+
 _SECURITY_HEADERS: Final = (
-    (
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "img-src 'self'; font-src 'self'; connect-src 'self'; "
-        "frame-src 'self' blob:; object-src 'none'; "
-        "base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
-    ),
+    ("Content-Security-Policy", _CONTENT_SECURITY_POLICY),
     ("X-Content-Type-Options", "nosniff"),
     ("X-Frame-Options", "DENY"),
     ("Referrer-Policy", "no-referrer"),

@@ -6,6 +6,7 @@ from pathlib import Path
 from cv_masking.adapters.clock import SystemClock
 from cv_masking.adapters.detection import PatternDetector, PresidioDetector
 from cv_masking.adapters.docx import DocxExtractor, DocxVerifier, DocxXmlRedactor
+from cv_masking.adapters.http.cv_source import HttpsCvSource
 from cv_masking.adapters.local_storage import (
     LocalInputStore,
     LocalOutputStore,
@@ -23,6 +24,7 @@ from cv_masking.application import (
     ExportService,
     JobService,
     RedactionService,
+    SourceImportService,
     UploadLimits,
     UploadService,
     VerificationService,
@@ -42,6 +44,8 @@ class Runtime:
     """The background queue; None in tests that drive documents by hand."""
     exports: ExportService | None = None
     """Masked-file downloads and the ZIP report."""
+    source_imports: SourceImportService | None = None
+    """Allowlisted CV URL downloads. None in tests that never call that route."""
 
 
 def build_runtime(settings: Settings | None = None, *, root: StorageRoot | None = None) -> Runtime:
@@ -66,6 +70,7 @@ def build_runtime(settings: Settings | None = None, *, root: StorageRoot | None 
         chosen,
         WorkerLoop(worker, processor),
         ExportService(jobs, outputs, work),
+        SourceImportService(uploads, HttpsCvSource(), max_file_bytes=chosen.max_file_bytes),
     )
 
 

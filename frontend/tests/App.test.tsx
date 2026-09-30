@@ -8,8 +8,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
+import { SOURCE_CV_HOST } from "../src/cvDownload";
 import { MESSAGES, messageForCode, messageForState } from "../src/i18n";
 import type { DocumentView } from "../src/types";
+
+const ALLOWED_CV = `https://${SOURCE_CV_HOST}/2026/synthetic-cv.pdf`;
 
 const viCopy = MESSAGES.vi;
 const enCopy = MESSAGES.en;
@@ -95,6 +98,154 @@ describe("App", () => {
     expect(
       screen.queryByRole("link", { name: /alert/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: viCopy.downloadLinks }),
+    ).toBeDisabled();
+  });
+
+  it("asks the local server to fetch an allowlisted link and enables start", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    const documentId = "00000000-0000-4000-8000-0000000000d1";
+    let imported = false;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/api/session")) {
+        return json({ csrf_token: "test-csrf" });
+      }
+      if (url === "/api/batches" && init?.method === "POST") {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: 0,
+          version: 0,
+        });
+      }
+      if (url.endsWith("/source-links") && init?.method === "POST") {
+        if (typeof init.body !== "string") {
+          throw new Error("expected a JSON body");
+        }
+        expect(JSON.parse(init.body)).toEqual({ url: ALLOWED_CV });
+        expect(url.startsWith("https://")).toBe(false);
+        imported = true;
+        return json({
+          document_id: documentId,
+          batch_id: batchId,
+          state: "uploaded",
+          document_format: "pdf",
+          size_bytes: 12,
+          attempt: 0,
+          error_code: null,
+          review_reasons: [],
+          can_approve: false,
+          has_output: false,
+          finding_counts: null,
+          residual_counts: {},
+          residual_pages: {},
+          hidden_removed: {},
+          version: 1,
+        });
+      }
+      if (url.endsWith(`/api/batches/${batchId}`)) {
+        return json({
+          batch_id: batchId,
+          state: "open",
+          mask_salary: true,
+          document_count: imported ? 1 : 0,
+          version: imported ? 1 : 0,
+          documents: imported
+            ? [
+                {
+                  document_id: documentId,
+                  batch_id: batchId,
+                  state: "uploaded",
+                  document_format: "pdf",
+                  size_bytes: 12,
+                  attempt: 0,
+                  error_code: null,
+                  review_reasons: [],
+                  can_approve: false,
+                  has_output: false,
+                  finding_counts: null,
+                  residual_counts: {},
+                  residual_pages: {},
+                  hidden_removed: {},
+                  version: 1,
+                },
+              ]
+            : [],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    const button = screen.getByRole("button", { name: viCopy.downloadLinks });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(viCopy.urlPaste), {
+      target: { value: "https://intranet.example.invalid/synthetic-cv.pdf" },
+    });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(viCopy.urlPaste), {
+      target: { value: ALLOWED_CV },
+    });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(
+      await screen.findByText(messageForState("vi", "uploaded")),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: viCopy.start })).toBeEnabled();
+    const urls = fetchMock.mock.calls.map((call) => requestUrl(call[0]));
+    expect(urls.some((url) => url.startsWith("https://"))).toBe(false);
+    expect(urls.some((url) => url.endsWith("/source-links"))).toBe(true);
+  });
+
+  it("shows a failed link by the name already on screen", async () => {
+    const batchId = "00000000-0000-4000-8000-0000000000aa";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestUrl(input);
+        if (url.includes("/api/session")) {
+          return json({ csrf_token: "test-csrf" });
+        }
+        if (url === "/api/batches" && init?.method === "POST") {
+          return json({
+            batch_id: batchId,
+            state: "open",
+            mask_salary: true,
+            document_count: 0,
+            version: 0,
+          });
+        }
+        if (url.endsWith("/source-links")) {
+          return jsonStatus(400, { code: "UPLOAD_SOURCE_UNAVAILABLE" });
+        }
+        if (url.endsWith(`/api/batches/${batchId}`)) {
+          return json({
+            batch_id: batchId,
+            state: "open",
+            mask_salary: true,
+            document_count: 0,
+            version: 0,
+            documents: [],
+          });
+        }
+        throw new Error(`unexpected ${url}`);
+      }),
+    );
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(viCopy.urlPaste), {
+      target: { value: ALLOWED_CV },
+    });
+    fireEvent.click(screen.getByRole("button", { name: viCopy.downloadLinks }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "synthetic-cv.pdf",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      messageForCode("vi", "UPLOAD_SOURCE_UNAVAILABLE"),
+    );
+    expect(screen.getByRole("button", { name: viCopy.start })).toBeDisabled();
   });
 
   it("keeps file names in the table after a mocked upload", async () => {
@@ -877,6 +1028,13 @@ function zipEntryNames(bytes: Uint8Array): string[] {
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function jsonStatus(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }

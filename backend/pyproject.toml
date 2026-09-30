@@ -51,6 +51,8 @@ select = [
 "src/cv_masking/adapters/local_storage/**" = ["PTH"]
 # Desktop flock needs a raw fd; /usr/bin/open is argv-only to a validated loopback URL.
 "src/cv_masking/desktop.py" = ["PTH", "S404", "S603"]
+# CV fetch reads public certificates from fixed keychains. argv is constant and has no shell.
+"src/cv_masking/adapters/http/cv_source.py" = ["S404", "S603"]
 
 [tool.mypy]
 python_version = "3.12"

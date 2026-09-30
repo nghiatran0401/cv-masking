@@ -17,10 +17,10 @@ Tech: React and TypeScript for the screen. Python 3.12 and FastAPI for the serve
 **2. HR uploads a batch**
 Up to 50 text PDF or Word (`.docx`) files. Vietnamese and English are both
 supported. Salary is hidden by default. HR can turn that off for the whole batch.
-If HR has a list of CV links (often only reachable on the company
-network), they paste the URLs in the app, open each link in this browser,
-save the files into a folder, then choose the folder. The app never fetches
-those URLs; the local server never sees the links.
+If HR has a list of CV links on the company file host, they paste the URLs
+and click **Download links**. This laptop downloads those files and adds them
+to the batch. The link must open without a browser login. The server does not
+send the CV anywhere else, and it does not store the link.
 Tech: the screen sends the files to the local server. SQLite stores job status
 and counts only. It never stores the personal text itself.
 

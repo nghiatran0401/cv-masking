@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from cv_masking.api.app import create_app
 from cv_masking.api.ui import is_public_ui_path
+from cv_masking.config import SOURCE_CV_HOST
 from cv_masking.domain.codes import ErrorCode
 from http_support import LOOPBACK_BASE
 
@@ -28,11 +29,14 @@ def test_index_and_assets_are_public(tmp_path: Path) -> None:
     assert page.status_code == 200
     assert "synthetic-ui" in page.text
     csp = page.headers["Content-Security-Policy"]
+    allowed_origin = f"https://{SOURCE_CV_HOST}"
     assert csp.startswith("default-src 'self'")
+    assert f"connect-src 'self' {allowed_origin}" in csp
     assert "frame-src 'self' blob:" in csp
     assert "object-src 'none'" in csp
     assert "*" not in csp
-    assert "https:" not in csp
+    assert "://" not in SOURCE_CV_HOST
+    assert "https:" not in csp.replace(allowed_origin, "")
     script = client.get("/assets/app.js")
     assert script.status_code == 200
     assert "synthetic-ui" in script.text

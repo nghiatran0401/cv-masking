@@ -41,8 +41,10 @@ laptop and produces permanently redacted copies.
   are named `masked_<original filename>` in the browser from tab memory. Original
   filenames are never stored on the server.
 - Files can be dropped, chosen one by one, or imported from a local folder. HR may
-  paste company-intranet CV URLs and open them in this browser; the local server
-  does not fetch CVs from URLs.
+  paste up to 50 `https` links from `data.ehiring.ehr.vib`. **Tải các liên kết**
+  asks the local server to download those files and add them to the batch (D-50).
+  The link must open without the browser login cookie. Other hosts stay on the
+  manual path: open each link, save the file, then choose the folder or drop it.
 - Local retention and cleanup per [data-retention.md](data-retention.md).
 
 ## 4. Non-goals
@@ -52,8 +54,9 @@ laptop and produces permanently redacted copies.
   README must say this.
 - No cloud, AWS, remote storage, telemetry, analytics, crash reporting, update checks,
   remote fonts/CDNs, or external AI/LLM/API calls at runtime.
-- No fetching of CVs from URLs or other remote hosts. HR saves those files onto this
-  laptop first, then chooses a local folder or drops the files.
+- The local server fetches CVs only from `https://data.ehiring.ehr.vib`, and
+  only after HR clicks **Tải các liên kết** (D-50). It does not follow a redirect
+  to any other host. Other pasted hosts are not requested.
 - No OCR and no image/scanned CVs in this PoC. Image-only PDFs go to `REVIEW_REQUIRED`
   with no output (see [supported-pdf.md](supported-pdf.md)).
 - No photo or image masking. Embedded images, including candidate photos and any text
@@ -121,7 +124,8 @@ laptop and produces permanently redacted copies.
 | D-46 | `VERIFY_RESIDUAL_*` keeps the masked output for inspection (View/Download). The UI shows leftover entity *types* and PDF *pages* only — never the leftover text. The file cannot become `COMPLETED`. Other FAILED codes still delete the output. Revised by D-48 for which files enter the HR ZIP. | Tech lead |
 | D-47 | Optional-content membership that cannot be decided is removed (over-redaction), not a reason to refuse the file. Malformed content streams, a render that introduces new extractable text, or leftover hidden/stripped catalogue after rewrite still fail closed (`REDACT_SANITIZE_FAILED`). | Tech lead |
 | D-48 | **Tải tất cả CV đã che** builds `output.zip` in the browser. Each included CV is `output/candidate <stem>/<file>` plus `masked_<file>`. Original bytes come from the File still in this tab. The ZIP includes every downloadable output (`COMPLETED`, `REVIEW_REQUIRED` with a file, and inspectable residual failures) except `REDACT_SANITIZE_FAILED`. Share only `masked_` copies that HR has checked. | Tech lead |
-| D-49 | The app does not fetch CV URLs. HR may paste up to 50 `http(s)` links in the tab; each is opened in the same browser (company intranet). FastAPI never GETs them. After the files are on this laptop, **Chọn thư mục** or drop. URLs stay in tab memory only and are never stored. | Tech lead |
+| D-49 | The app does not fetch CV URLs. HR may paste up to 50 `http(s)` links in the tab; each is opened in the same browser (company intranet). FastAPI never GETs them. After the files are on this laptop, **Chọn thư mục** or drop. URLs stay in tab memory only and are never stored. Revised by D-50. | Tech lead |
+| D-50 | **Tải các liên kết** sends each pasted `https` URL on `data.ehiring.ehr.vib` to the local API, which GETs that URL and stores the bytes as a normal input. One URL per request, up to 50. The URL is not written to SQLite, logs, or disk. Redirects stay on that host. The browser login cookie is not sent. Other hosts are refused and are not requested. Display names stay in the browser tab. | Tech lead |
 
 ## 6. Known gaps
 

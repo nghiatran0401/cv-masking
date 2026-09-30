@@ -26,11 +26,15 @@ drafts inside the UI (there is no such field) or into ChatGPT/Cursor.
 1. Create a batch. The salary toggle defaults **on** (salary is masked).
    Change it only before you start the batch; it locks once processing
    starts.
-2. Drop PDF and DOCX CVs, or paste a list of company intranet links, open
-   each in this browser (they only work on the bank network), save the files
-   into a folder, then **Chọn thư mục**. The local server does **not** download
-   those URLs. Up to 50 files, 20 MB each, 30 PDF pages. Legacy `.doc`,
-   macros, and templates are refused.
+2. Drop PDF and DOCX CVs, or paste up to 50 `https` links from
+   `data.ehiring.ehr.vib` and click **Tải các liên kết**. This laptop downloads
+   those files and adds them to the batch. The link must open without the
+   browser login; if it only works while you are logged in, that file is not
+   added and you can save it yourself, then use **Chọn thư mục** or drop.
+   Then click **Bắt đầu che**. Up to 50 files, 20 MB each, 30 PDF pages.
+   Legacy `.doc`, macros, and templates are refused. **Thử lại** needs the
+   file in this tab, so a file that arrived only from a link cannot be retried
+   that way; paste the link and click **Tải các liên kết** again.
 3. Start the batch. One document runs at a time. Status is codes and
    per-type counts only — never the candidate's text. If a row fails,
    **Thử lại** re-sends that file in this batch (the file must still be in

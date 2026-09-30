@@ -20,8 +20,11 @@ from cv_masking.domain.limits import (
     HARD_MAX_JOB_TIMEOUT_SECONDS,
     HARD_MAX_UPLOAD_TIMEOUT_SECONDS,
 )
+from cv_masking.domain.source_url import SOURCE_CV_HOST as SOURCE_CV_HOST
 
 LOOPBACK_HOST: Final = "127.0.0.1"
+# SOURCE_CV_HOST is re-exported from the domain so CSP and this module stay aligned
+# with frontend/src/cvDownload.ts. Hostname only, no scheme.
 DEFAULT_PORT: Final = 8765
 MIN_PORT: Final = 1024
 MAX_PORT: Final = 65535

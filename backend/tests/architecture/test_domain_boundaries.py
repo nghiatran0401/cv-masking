@@ -16,6 +16,7 @@ ALLOWED_MODULES = {
     "re",
     "types",
     "typing",
+    "urllib.parse",  # splits a URL string; it does not open a connection
     "uuid",
 }
 FORBIDDEN_NAMES = {"open", "eval", "exec", "compile", "__import__", "breakpoint", "input", "print"}

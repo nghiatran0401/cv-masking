@@ -34,8 +34,11 @@ test("the UI is local-only, bilingual, and salary is the only toggle", async ({
   await expect(page.getByText("Chọn thư mục", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Dán URL, mỗi dòng một liên kết")).toBeVisible();
   await expect(
-    page.getByText("Không lấy CV từ liên kết mạng", { exact: false }),
+    page.getByText("không gửi CV đi nơi khác", { exact: false }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Tải các liên kết" }),
+  ).toBeDisabled();
   await page.getByRole("button", { name: "English" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "CV masking",
