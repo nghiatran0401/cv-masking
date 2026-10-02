@@ -7,7 +7,13 @@ trên máy Mac hoặc Windows của người dùng nhân sự. Tệp CV ở lạ
 Trên Mac, nhân sự mở ứng dụng bằng cách bấm đúp `scripts/cv-masking.command`.
 Lần đầu, nếu macOS chặn tệp, bấm chuột phải rồi chọn Open.
 
-Trên Windows, lần đầu mở PowerShell trong thư mục dự án và chạy
+Trên Windows, cách dễ nhất là gói cài sẵn: nhân sự giải nén
+`cv-masking-windows-<phiên bản>.zip`, bấm đúp `Install CV Masking.bat`, rồi
+dùng lối tắt "CV Masking" trên màn hình. Gói có sẵn Python 3.12 riêng và giao
+diện, nên laptop không cần Python, uv, Node, hay internet. Hướng dẫn cho nhân
+sự nằm trong `HUONG-DAN.txt` của gói.
+
+Nếu chạy từ mã nguồn trên Windows, lần đầu mở PowerShell trong thư mục dự án và chạy
 `powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`.
 Lệnh này không dùng GNU Make. Nó tải Python 3.12 qua uv, tạo `backend\.venv`
 chỉ cho dự án này, rồi dựng giao diện. Những lần sau, bấm đúp
@@ -112,6 +118,7 @@ Python 3.12 qua uv và tạo `backend/.venv` chỉ cho dự án này.
 make setup               # lần đầu trên laptop: venv, thư viện, rồi giao diện bản chạy
 make install             # tạo backend/.venv, khóa phiên bản thư viện, Playwright Chromium, file guard
 make build               # giao diện bản chạy vào gói Python
+make package-windows     # gói zip Windows chạy ngay trong dist/ (Python riêng, không cần mạng)
 make dev                 # backend 127.0.0.1:8765, frontend 127.0.0.1:5173
 make check               # file guard + lint + kiểm tra kiểu + build giao diện + kiểm thử
 make eval                # số liệu tổng hợp chỉ siêu dữ liệu (không dùng CV thật)

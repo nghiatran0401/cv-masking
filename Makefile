@@ -4,12 +4,13 @@ BACKEND := backend
 FRONTEND := frontend
 UV_RUN := uv run --locked
 
-.PHONY: help setup install hooks guard dev dev-backend dev-frontend build eval fmt lint typecheck test check
+.PHONY: help setup install hooks guard dev dev-backend dev-frontend build package-windows eval fmt lint typecheck test check
 
 help:
 	@echo "make setup      First time on a laptop: project venv, locked dependencies, then the production UI"
 	@echo "make install    Create backend/.venv with uv-managed Python 3.12 and install locked dependencies"
 	@echo "make build      Production UI into the Python package (HR runtime does not need Node)"
+	@echo "make package-windows  Offline Windows zip in dist/ (bundled Python, no install needed on the laptop)"
 	@echo "make guard      Refuse tracked documents, images, data files, and logs"
 	@echo "make dev        Run backend (127.0.0.1:8765) and frontend (127.0.0.1:5173)"
 	@echo "make fmt        Format backend and frontend"
@@ -48,6 +49,9 @@ build:
 	rm -rf $(BACKEND)/src/cv_masking/static
 	mkdir -p $(BACKEND)/src/cv_masking/static
 	cp -R $(FRONTEND)/dist/. $(BACKEND)/src/cv_masking/static/
+
+package-windows:
+	scripts/build-windows-package.sh
 
 fmt:
 	cd $(BACKEND) && $(UV_RUN) ruff format . && $(UV_RUN) ruff check --fix .

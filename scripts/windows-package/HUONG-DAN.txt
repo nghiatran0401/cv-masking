@@ -1,0 +1,34 @@
+CHE THÔNG TIN CV - HƯỚNG DẪN TRÊN WINDOWS
+
+Ứng dụng chạy hoàn toàn trên laptop này. Không cần cài Python, Node, hay internet.
+CV không được gửi ra khỏi máy.
+
+CÀI ĐẶT (một lần)
+1. Giải nén toàn bộ tệp zip (chuột phải > Extract All).
+2. Mở thư mục CVMasking vừa giải nén.
+3. Bấm đúp "Install CV Masking.bat".
+   Ứng dụng được cài vào %LOCALAPPDATA%\Programs\CVMasking và tạo lối tắt
+   "CV Masking" trên màn hình. Sau đó có thể xóa tệp zip và thư mục vừa giải nén.
+
+SỬ DỤNG
+1. Bấm đúp "CV Masking" trên màn hình.
+2. Trình duyệt mở http://127.0.0.1:8765. Giữ cửa sổ đen mở trong lúc làm việc.
+3. Kéo thả tối đa 50 CV (PDF có lớp chữ hoặc .docx).
+4. Xem các tệp "Cần xem", rồi giữ hoặc xóa.
+5. Tải "masked.zip" và chỉ gửi tệp này đi.
+   KHÔNG gửi "output.zip": tệp đó có cả CV gốc.
+6. Làm xong: đóng cửa sổ đen để thoát.
+
+XÓA DỮ LIỆU SAU KHI XONG
+Thoát ứng dụng, rồi xóa thư mục:
+  %LOCALAPPDATA%\Programs\CVMasking\data
+
+CẬP NHẬT
+Giải nén bản mới và bấm đúp "Install CV Masking.bat". Thư mục data được giữ nguyên.
+
+GỠ CÀI ĐẶT
+Thoát ứng dụng, xóa thư mục %LOCALAPPDATA%\Programs\CVMasking và lối tắt
+"CV Masking" trên màn hình.
+
+NẾU CÓ LỖI
+Chụp ảnh cửa sổ đen và gửi cho IT. Không gửi CV hay tên tệp CV.
