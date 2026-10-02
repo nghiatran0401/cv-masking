@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Mission
-Build a localhost-only web application for bank-managed macOS laptops (Windows is a later, separate stage) that batch-detects and permanently redacts approved PII/sensitive entities from CV PDF and DOCX files (Vietnamese primary, English supported), each redacted in its own format. No runtime document data may leave the laptop. Output is masked, not anonymized.
+Build a web application that batch-detects and permanently redacts approved PII/sensitive entities from CV PDF and DOCX files (Vietnamese primary, English supported), each redacted in its own format. It may run on an HR laptop or be hosted on a server and used over the network; CVs do not have to stay on the HR user's laptop. Output is masked, not anonymized.
 
 ## Governing documents
 Read these before changing behaviour; they override assumptions:
@@ -27,7 +27,7 @@ Read these before changing behaviour; they override assumptions:
 - Never inspect, copy, generate from, commit, or log real candidate data.
 - Use only clearly synthetic fixtures.
 - Never store raw PII values in SQLite, logs, API status responses, CSV reports, snapshots, or test output.
-- Never bind the server to 0.0.0.0; use 127.0.0.1 only.
+- The server may listen on a network interface. A network-reachable deployment must use TLS, authenticate users, and scope batches, files, and downloads to their owner.
 - Never overwrite an input document.
 - Never mark a document COMPLETED unless independent verification passes.
 - Never implement visual overlays as redaction; use PDF redaction APIs and apply them.
@@ -38,7 +38,7 @@ Read these before changing behaviour; they override assumptions:
 - Do not expand scope beyond the request.
 
 ## Architecture
-- Localhost web app on macOS; runtime files in the project's git- and Cursor-ignored `data/` folder (D-22). Do not add Windows-specific code before the Windows stage.
+- Web app, run locally or hosted; runtime files in the project's git- and Cursor-ignored `data/` folder (D-22). Do not add Windows-specific code before the Windows stage.
 - React/Vite/TypeScript frontend.
 - Python 3.12/FastAPI backend.
 - Core processing independent from FastAPI, SQLite, and local filesystem adapters.
