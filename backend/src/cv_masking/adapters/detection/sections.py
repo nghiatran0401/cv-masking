@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Final
 
 from cv_masking.adapters.detection.normalize import fold_with_map, original_span
+from cv_masking.domain.catalogue import FAMILY_HEADINGS, OTHER_HEADINGS, REFERENCE_HEADINGS
 from cv_masking.ports.extraction import TextPart
 
 
@@ -15,66 +16,6 @@ class SectionKind(StrEnum):
     OTHER = "other"
 
 
-REFERENCE_HEADINGS: Final = (
-    "nguoi tham chieu",
-    "nguoi tham khao",
-    "nguoi gioi thieu",
-    "thong tin tham chieu",
-    "references",
-    "referees",
-    "reference",
-)
-FAMILY_HEADINGS: Final = (
-    "thong tin gia dinh",
-    "quan he gia dinh",
-    "hoan canh gia dinh",
-    "gia dinh",
-    "family",
-    "family background",
-    "family information",
-)
-OTHER_HEADINGS: Final = (
-    "kinh nghiem",
-    "kinh nghiem lam viec",
-    "qua trinh cong tac",
-    "hoc van",
-    "trinh do hoc van",
-    "qua trinh hoc tap",
-    "ky nang",
-    "du an",
-    "chung chi",
-    "ngoai ngu",
-    "hoat dong",
-    "giai thuong",
-    "so thich",
-    "muc tieu",
-    "muc tieu nghe nghiep",
-    "thong tin ca nhan",
-    "thong tin lien he",
-    "experience",
-    "work experience",
-    "work history",
-    "employment",
-    "education",
-    "skills",
-    "projects",
-    "certifications",
-    "certificates",
-    "languages",
-    "activities",
-    "awards",
-    "interests",
-    "hobbies",
-    "objective",
-    "career objective",
-    "expectations",
-    "summary",
-    "profile",
-    "personal information",
-    "personal details",
-    "contact",
-    "contact information",
-)
 _BULLET: Final = r"[\s\-*•·\d.)]*"
 MAX_HEADING_CHARS: Final = 200
 """Longer lines are never headings. The heading patterns backtrack quadratically on

@@ -13,6 +13,15 @@ from typing import Final
 from cv_masking.adapters.detection.hits import Hit
 from cv_masking.adapters.detection.normalize import fold, fold_with_map, original_span
 from cv_masking.adapters.detection.sections import PartView, SectionKind, is_heading_text
+from cv_masking.domain.catalogue import (
+    EMAIL_LOCAL_RE,
+    EXCLUDED_PHRASES,
+    EXCLUDED_TOKENS,
+    HONORIFICS,
+    NAME_LABELS,
+    VN_SURNAMES,
+    WEAK_EMAIL_TOKENS,
+)
 from cv_masking.domain.policy import EntityType
 
 LABELED: Final = 0.95
@@ -23,146 +32,6 @@ _HEADER_BASE: Final = 0.55
 _HEADER_CAP: Final = 0.95
 _HEADER_LINES: Final = 6
 _LARGE_FONT_RATIO: Final = 1.25
-
-NAME_LABELS: Final = (
-    "ho va ten",
-    "ho ten",
-    "ten ung vien",
-    "ten",
-    "full name",
-    "candidate name",
-    "name",
-)
-HONORIFICS: Final = ("ong", "ba", "anh", "chi", "co", "thay", "mr", "mrs", "ms", "miss", "dr")
-VN_SURNAMES: Final = frozenset(
-    {
-        "nguyen",
-        "tran",
-        "le",
-        "pham",
-        "hoang",
-        "huynh",
-        "phan",
-        "vu",
-        "vo",
-        "dang",
-        "bui",
-        "do",
-        "ho",
-        "ngo",
-        "duong",
-        "ly",
-        "dinh",
-        "truong",
-        "mai",
-        "to",
-        "lam",
-        "ha",
-        "dao",
-        "cao",
-        "luu",
-        "ta",
-        "chau",
-        "quach",
-        "thai",
-        "kieu",
-        "chu",
-        "trieu",
-        "luong",
-        "doan",
-        "trinh",
-        "tang",
-    }
-)
-EXCLUDED_TOKENS: Final = frozenset(
-    {
-        "ltd",
-        "inc",
-        "corp",
-        "jsc",
-        "llc",
-        "plc",
-        "bank",
-        "group",
-        "company",
-        "corporation",
-        "holdings",
-        "limited",
-        "university",
-        "college",
-        "institute",
-        "academy",
-        "school",
-        "technology",
-        "technologies",
-        "solutions",
-        "software",
-        "services",
-        "consulting",
-        "vitae",
-        "resume",
-        "cv",
-        "engineer",
-        "developer",
-        "manager",
-        "analyst",
-        "intern",
-        "specialist",
-        "officer",
-        "director",
-        "consultant",
-        "designer",
-        "accountant",
-        "executive",
-        "assistant",
-        "lead",
-        "head",
-        "senior",
-        "junior",
-        "tnhh",
-        "programming",
-        "languages",
-        "frameworks",
-        "libraries",
-        "databases",
-        "devops",
-        "tools",
-        "cloud",
-    }
-)
-EXCLUDED_PHRASES: Final = (
-    "cong ty",
-    "co phan",
-    "ngan hang",
-    "dai hoc",
-    "cao dang",
-    "hoc vien",
-    "truong dai",
-    "truong thpt",
-    "truong thcs",
-    "thanh pho",
-    "ho chi minh",
-    "ha noi",
-    "da nang",
-    "hai phong",
-    "can tho",
-    "viet nam",
-    "vietnam",
-    "curriculum vitae",
-    "so yeu ly lich",
-    "ho so",
-    "chuyen vien",
-    "nhan vien",
-    "ky su",
-    "truong phong",
-    "giam doc",
-    "ke toan",
-    "thuc tap",
-    "programming languages",
-    "frameworks libraries",
-    "databases tools",
-)
-_WEAK_EMAIL_TOKENS: Final = frozenset({"van", "thi"})
 _SEPARATOR_RE: Final = re.compile(r"\s*(?:\||•|·|;|,|\(|\s[-\u2013\u2014]\s|\t|\s{2,})\s*")
 _LABEL_RE: Final = re.compile(
     r"^[\s\-*•·]*(?:"
@@ -177,10 +46,7 @@ _HONORIFIC_RE: Final = re.compile(
 _EXCLUDED_PHRASE_RES: Final = tuple(
     re.compile(rf"(?<![^\W_]){re.escape(phrase)}(?![^\W_])") for phrase in EXCLUDED_PHRASES
 )
-_EMAIL_LOCAL_RE: Final = re.compile(
-    r"(?<![A-Za-z0-9._%+\-])([A-Za-z0-9._%+\-]+)@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,}"
-)
-"""Same shape as the detector's email pattern; see `_EMAIL_RE` there."""
+_EMAIL_LOCAL_RE: Final = re.compile(EMAIL_LOCAL_RE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -452,7 +318,7 @@ def _variants(tokens: tuple[str, ...]) -> list[tuple[str, ...]]:
 
 
 def _email_agrees(folded: tuple[str, ...], emails: frozenset[str]) -> bool:
-    strong = [token for token in folded if token not in _WEAK_EMAIL_TOKENS and len(token) >= 3]
+    strong = [token for token in folded if token not in WEAK_EMAIL_TOKENS and len(token) >= 3]
     if not strong or not emails:
         return False
     exact = sum(1 for token in strong if token in emails)

@@ -1,8 +1,8 @@
 """Masking policy (docs/masking-policy.md, policy version 2).
 
-Mandatory entity types cannot be disabled: the only HR-selectable setting is
-the salary toggle. Thresholds and labels are fixed per policy version.
-Jobs stored under version 1 still load; new jobs record version 2.
+Which fields exist, which one is editable, and the replacement labels live in
+the catalogue. Salary is that editable field. Thresholds are fixed per policy
+version. Jobs stored under version 1 still load; new jobs record version 2.
 """
 
 from collections.abc import Iterable, Mapping
@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Final
 
 from cv_masking.domain._validation import require_bool, require_finite_float
+from cv_masking.domain.catalogue import FIELDS
 from cv_masking.domain.errors import InvariantError, PolicyError
 
 POLICY_VERSION: Final = "2"
@@ -40,32 +41,26 @@ class EntityType(StrEnum):
     SALARY = "salary"
 
 
-OPTIONAL_ENTITY_TYPES: Final = frozenset({EntityType.SALARY})
-UNHANDLED_ENTITY_TYPES: Final = frozenset({EntityType.PERSONAL_URL})
+def _require_catalogue_covers_every_type() -> None:
+    listed = tuple(field.entity for field in FIELDS)
+    if set(listed) != {entity.value for entity in EntityType} or len(listed) != len(EntityType):
+        raise InvariantError("catalogue FIELDS must list every entity type once")
+
+
+_require_catalogue_covers_every_type()
+
+OPTIONAL_ENTITY_TYPES: Final = frozenset(
+    EntityType(field.entity) for field in FIELDS if field.editable
+)
+UNHANDLED_ENTITY_TYPES: Final = frozenset(
+    EntityType(field.entity) for field in FIELDS if not field.masked
+)
 MANDATORY_ENTITY_TYPES: Final = (
     frozenset(EntityType) - OPTIONAL_ENTITY_TYPES - UNHANDLED_ENTITY_TYPES
 )
 
 REPLACEMENT_LABELS: Final[Mapping[EntityType, str]] = MappingProxyType(
-    {
-        EntityType.CANDIDATE_NAME: "[NAME]",
-        EntityType.REFERENCE_NAME: "[NAME]",
-        EntityType.EMAIL: "[EMAIL]",
-        EntityType.PHONE: "[PHONE]",
-        EntityType.NATIONAL_ID: "[ID]",
-        EntityType.PASSPORT: "[ID]",
-        EntityType.POSTAL_ADDRESS: "[ADDRESS]",
-        EntityType.DATE_OF_BIRTH: "[DOB]",
-        EntityType.GENDER: "[REDACTED]",
-        EntityType.MARITAL_STATUS: "[REDACTED]",
-        EntityType.NATIONALITY: "[REDACTED]",
-        EntityType.RELIGION: "[REDACTED]",
-        EntityType.ETHNICITY: "[REDACTED]",
-        EntityType.HEALTH: "[REDACTED]",
-        EntityType.FAMILY_DETAILS: "[REDACTED]",
-        EntityType.PERSONAL_URL: "[URL]",
-        EntityType.SALARY: "[SALARY]",
-    }
+    {EntityType(field.entity): field.replacement for field in FIELDS}
 )
 
 

@@ -6,6 +6,11 @@ from typing import Final
 from cv_masking.adapters.detection.hits import Hit
 from cv_masking.adapters.detection.normalize import fold
 from cv_masking.adapters.detection.sections import PartView, SectionKind
+from cv_masking.domain.catalogue import (
+    ABBREVIATED_ADDRESS_CUES,
+    ADDRESS_CUES,
+    NUMBERED_ADDRESS_RES,
+)
 from cv_masking.domain.policy import EntityType
 
 FAMILY_CONFIDENCE: Final = 0.90
@@ -13,44 +18,8 @@ _CONTACT_LINES: Final = 15
 _SEGMENT_RE: Final = re.compile(r"\||•|·|;|\s[-\u2013\u2014]\s|\t")
 _TOKEN_RE: Final = re.compile(r"[a-z]+\.?")
 _PHONE_LIKE_RE: Final = re.compile(r"(?:\d[\s.\-]?){9,}")
-ADDRESS_CUES: Final = frozenset(
-    {
-        "so",
-        "duong",
-        "pho",
-        "ngo",
-        "ngach",
-        "hem",
-        "kiet",
-        "phuong",
-        "quan",
-        "huyen",
-        "xa",
-        "tinh",
-        "thon",
-        "ap",
-        "khu",
-        "street",
-        "st",
-        "road",
-        "rd",
-        "avenue",
-        "ave",
-        "lane",
-        "ward",
-        "district",
-        "dist",
-        "province",
-        "apartment",
-    }
-)
-_ABBREVIATED_CUES: Final = frozenset({"p.", "q.", "tp.", "tx.", "tt."})
-_NUMBERED_CUE_RES: Final = (
-    re.compile(r"\bbuilding\s+\d{1,4}\b", re.I),
-    re.compile(r"\bfloor\s+\d{1,3}\b", re.I),
-    re.compile(r"\b\d{1,3}(?:st|nd|rd|th)\s+floor\b", re.I),
-    re.compile(r"\bapt\.?\s+\d{1,4}\b", re.I),
-)
+_ABBREVIATED_CUES: Final = ABBREVIATED_ADDRESS_CUES
+_NUMBERED_CUE_RES: Final = tuple(re.compile(pattern, re.I) for pattern in NUMBERED_ADDRESS_RES)
 _AGE_OR_YEAR_RE: Final = re.compile(r"\b\d{1,2}\s+years?\b|\b(?:19|20)\d{2}\b", re.I)
 
 
